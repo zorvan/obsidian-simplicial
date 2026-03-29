@@ -1,0 +1,9 @@
+{
+  "id": "obsidian-simplicial",
+  "name": "Simplicial Complex",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Organic simplicial complex view for Obsidian vaults.",
+  "author": "OpenAI Codex",
+  "isDesktopOnly": false
+}
