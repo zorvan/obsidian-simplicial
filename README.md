@@ -65,7 +65,7 @@ Both views are projections of the same underlying simplicial model. Toggle betwe
 - **Living layout** — force simulation with simplex cohesion and gentle breathing. Layout never fully settles; it drifts quietly when idle, wakes on interaction or vault changes.
 - **Sleep mode** — the render loop pauses when kinetic energy falls below threshold. No idle CPU drain.
 - **Hover focus** — hovering a node reveals only its structural context. Everything else fades. No click required.
-- **Dimension filter** — toggle edges, clusters (2-simplices), and cores (3-simplices) independently.
+- **Dimension filter** — toggle edges, clusters (2-simplices), and cores (3-simplices and higher) independently.
 - **Metadata panel** — optional label and weight per simplex. Weight is felt (blob density), not displayed as a number.
 - **Node pinning** — double-click any node to fix its position across sessions. Click-and-hold to temporarily push overlapping neighbors apart.
 - **Rename tracking** — renaming a note in Obsidian automatically updates all simplex references without losing layout positions.
@@ -151,7 +151,7 @@ Every simplex can optionally carry:
 
 **Weight** — cohesion intensity from 0.1 to 1.0. Affects blob density and the strength of attraction forces in the layout. Felt, not displayed. Defaults to 1.0.
 
-Colors are deterministic — derived from a hash of the label, so a cluster named "founding engine" is always the same color across restarts.
+Colors are deterministic by simplex order, with stable per-simplex variation inside each order family, so clusters do not all collapse into the same exact color.
 
 ---
 
@@ -200,8 +200,8 @@ Open Settings → Simplicial Complex to configure:
 | Central file | `_simplicial.md` | Path for central file mode |
 | Show edges | On | Render dim-1 simplex capsules and edge lines |
 | Show clusters | On | Render dim-2 simplex blobs |
-| Show cores | On | Render dim-3 simplex blobs |
-| Max rendered dimension | 3 | Cap visual rendering (higher-order still stored) |
+| Show cores | On | Render simplices with dimension 3 and higher |
+| Max rendered dimension | 12 | Cap visual rendering (higher-order still stored) |
 | Noise amount | 0.12 | Breathing intensity of the layout |
 | Sleep threshold | 0.01 | Kinetic energy level at which the layout pauses |
 | Dark mode | Auto | Follow system, or force light/dark |

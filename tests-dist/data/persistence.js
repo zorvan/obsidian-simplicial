@@ -131,7 +131,7 @@ function getDefaultSettings() {
         showEdges: true,
         showClusters: true,
         showCores: true,
-        maxRenderedDim: 3,
+        maxRenderedDim: 12,
         noiseAmount: 0.12,
         sleepThreshold: 0.01,
         repulsionStrength: 2400,

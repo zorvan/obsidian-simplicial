@@ -5,7 +5,7 @@ import { LayoutEngine } from "../layout/engine";
 import { InteractionController } from "../interaction/controller";
 import { renderBlob } from "./blobs";
 import { renderEdges } from "./edges";
-import { colorForSimplex } from "./palette";
+import { effectiveColorForSimplex } from "./palette";
 
 interface RendererCallbacks {
   onContextMenu?: (target: { nodeId?: string; simplexKey?: string }, event: MouseEvent) => void;
@@ -348,7 +348,7 @@ export class Renderer {
   private drawFormalSimplex(ctx: CanvasRenderingContext2D, simplex: Simplex, focusActive: boolean): void {
     const polygon = simplexPolygon(simplex, this.model.getAllNodes());
     if (polygon.length < 2) return;
-    const [r, g, b] = colorForSimplex(simplex);
+    const [r, g, b] = effectiveColorForSimplex(this.model, simplex);
     const alpha = focusActive ? 0.8 : 0.28;
     ctx.save();
     ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
@@ -375,7 +375,7 @@ export class Renderer {
     if (!this.settings.showSuggestions || !simplex.suggested || !simplex.inferred) return;
     const polygon = simplexPolygon(simplex, this.model.getAllNodes());
     if (polygon.length < 2) return;
-    const [r, g, b] = colorForSimplex(simplex);
+    const [r, g, b] = effectiveColorForSimplex(this.model, simplex);
     ctx.save();
     ctx.setLineDash([5, 5]);
     ctx.strokeStyle = `rgba(${r},${g},${b},0.7)`;
@@ -434,7 +434,7 @@ export class Renderer {
         const simplexDim = simplex.nodes.length - 1;
         if ((simplexDim === 1 && !this.settings.showEdges)
           || (simplexDim === 2 && !this.settings.showClusters)
-          || (simplexDim === 3 && !this.settings.showCores)) {
+          || (simplexDim >= 3 && !this.settings.showCores)) {
           return;
         }
         this.drawFormalSimplex(ctx, simplex, !focusState.isActive || focusState.involvesSimplex(simplex, key));
@@ -445,16 +445,16 @@ export class Renderer {
         const simplexDim = simplex.nodes.length - 1;
         if ((simplexDim === 1 && !this.settings.showEdges)
           || (simplexDim === 2 && !this.settings.showClusters)
-          || (simplexDim === 3 && !this.settings.showCores)) {
+          || (simplexDim >= 3 && !this.settings.showCores)) {
           return;
         }
-        renderBlob(ctx, key, simplex, nodes, this.alphaForDimension(simplexDim, focusState.isActive), focusState);
+        renderBlob(ctx, key, simplex, this.model, nodes, this.alphaForDimension(simplexDim, focusState.isActive), focusState);
         this.drawSuggestionOverlay(ctx, key, simplex);
       });
     }
 
     if (!this.settings.formalMode) {
-      renderEdges(ctx, simplices.map(([, simplex]) => simplex), this.model.nodes, this.settings.showEdges, focusState);
+      renderEdges(ctx, simplices.map(([, simplex]) => simplex), this.model, this.model.nodes, this.settings.showEdges, focusState);
     }
 
     nodes.forEach((node) => {
@@ -462,7 +462,7 @@ export class Renderer {
       const isHovered = node.id === focusState.hoveredNodeId;
       const isActive = !focusState.isActive || focusState.involvesNode(node.id);
       const primarySimplex = this.model.getSimplicesForNode(node.id)[0] ?? null;
-      const [r, g, b] = primarySimplex ? colorForSimplex(primarySimplex) : [136, 135, 128];
+      const [r, g, b] = primarySimplex ? effectiveColorForSimplex(this.model, primarySimplex) : [136, 135, 128];
       if (isHovered) {
         ctx.beginPath();
         ctx.arc(node.px, node.py, 15, 0, Math.PI * 2);

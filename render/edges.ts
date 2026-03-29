@@ -1,9 +1,11 @@
+import { SimplicialModel } from "../core/model";
 import type { LayoutNode, NodeID, Simplex } from "../core/types";
-import { colorForSimplex } from "./palette";
+import { effectiveColorForSimplex } from "./palette";
 
 export function renderEdges(
   ctx: CanvasRenderingContext2D,
   simplices: Simplex[],
+  model: SimplicialModel,
   nodes: Map<NodeID, LayoutNode>,
   showEdges: boolean,
   focusState: { isActive: boolean; involvesSimplex(simplex: Simplex): boolean },
@@ -14,7 +16,7 @@ export function renderEdges(
   simplices.forEach((simplex) => {
     const ns = simplex.nodes.map((id) => nodes.get(id)).filter(Boolean) as LayoutNode[];
     const isActive = !focusState.isActive || focusState.involvesSimplex(simplex);
-    const [r, g, b] = colorForSimplex(simplex);
+    const [r, g, b] = effectiveColorForSimplex(model, simplex);
     for (let i = 0; i < ns.length; i++) {
       for (let j = i + 1; j < ns.length; j++) {
         const key = [ns[i].id, ns[j].id].sort().join("|");

@@ -43,6 +43,9 @@ export default class SimplicialPlugin extends Plugin {
 
   async onload(): Promise<void> {
     this.settings = Object.assign(getDefaultSettings(), await this.loadData());
+    if (this.settings.maxRenderedDim === 3) {
+      this.settings.maxRenderedDim = 12;
+    }
     logger.info("plugin", "Loading plugin", {
       persistenceMode: this.settings.persistenceMode,
       centralFile: this.settings.centralFile,
@@ -593,6 +596,19 @@ class SimplicialSettingTab extends PluginSettingTab {
             await ensureCentralFile(this.app, this.plugin.settings.centralFile);
           }
           await this.plugin.saveSettings();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Max rendered dimension")
+      .setDesc("Highest simplex dimension to draw. A 10-node simplex has dimension 9.")
+      .addSlider((slider) => {
+        slider.setLimits(1, 12, 1);
+        slider.setValue(this.plugin.settings.maxRenderedDim);
+        slider.onChange(async (value) => {
+          this.plugin.settings.maxRenderedDim = value;
+          await this.plugin.saveSettings();
+          this.plugin.renderer.render();
         });
       });
 

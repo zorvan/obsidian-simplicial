@@ -241,7 +241,7 @@ class SimplicialModel {
             simplexCount: simplices.length,
             edgeCount: edgeSimplices.length,
             clusterCount: simplices.filter((simplex) => simplex.nodes.length === 3).length,
-            coreCount: simplices.filter((simplex) => simplex.nodes.length === 4).length,
+            coreCount: simplices.filter((simplex) => simplex.nodes.length >= 4).length,
             inferredCount: simplices.filter((simplex) => simplex.inferred).length,
             suggestedCount: simplices.filter((simplex) => simplex.suggested).length,
             connectedComponents,

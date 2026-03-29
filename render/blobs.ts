@@ -1,5 +1,6 @@
 import type { LayoutNode, Simplex } from "../core/types";
-import { colorForSimplex } from "./palette";
+import { SimplicialModel } from "../core/model";
+import { effectiveColorForSimplex } from "./palette";
 
 type Point = { x: number; y: number };
 type BlobCacheEntry = { canvas: HTMLCanvasElement; x: number; y: number; positions: Point[] };
@@ -146,13 +147,14 @@ export function renderBlob(
   ctx: CanvasRenderingContext2D,
   simplexKey: string,
   simplex: Simplex,
+  model: SimplicialModel,
   nodes: LayoutNode[],
   baseAlpha: number,
   focusState: { isActive: boolean; involvesSimplex(simplex: Simplex, key?: string): boolean },
 ): void {
   const ns = resolveNodes(simplex, nodes);
   if (!ns.length) return;
-  const [r, g, b] = colorForSimplex(simplex);
+  const [r, g, b] = effectiveColorForSimplex(model, simplex);
   const blobR = 36 + (simplex.weight ?? 1) * 24 + (simplex.nodes.length - 1 === 3 ? 20 : 0);
   const alpha = focusState.isActive
     ? focusState.involvesSimplex(simplex, simplexKey) ? baseAlpha : baseAlpha * 0.18
