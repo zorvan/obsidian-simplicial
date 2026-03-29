@@ -10,6 +10,7 @@ import { effectiveColorForSimplex } from "./palette";
 interface RendererCallbacks {
   onContextMenu?: (target: { nodeId?: string; simplexKey?: string }, event: MouseEvent) => void;
   onLassoCreate?: (nodeIds: string[]) => void;
+  onNodeOpen?: (nodeId: string) => void;
 }
 
 type Box = { left: number; top: number; right: number; bottom: number };
@@ -186,7 +187,7 @@ export class Renderer {
       if (this.isLassoActive) this.finishLasso();
     });
     this.canvas.addEventListener("dblclick", () => {
-      if (this.controller.hoveredNodeId) this.controller.togglePin(this.controller.hoveredNodeId);
+      if (this.controller.hoveredNodeId) this.callbacks.onNodeOpen?.(this.controller.hoveredNodeId);
       this.render();
     });
     this.canvas.addEventListener("click", (event) => {
@@ -228,6 +229,13 @@ export class Renderer {
     return {
       x: (point.x - this.viewOffsetX) / this.viewZoom,
       y: (point.y - this.viewOffsetY) / this.viewZoom,
+    };
+  }
+
+  private worldToScreen(point: { x: number; y: number }): { x: number; y: number } {
+    return {
+      x: point.x * this.viewZoom + this.viewOffsetX,
+      y: point.y * this.viewZoom + this.viewOffsetY,
     };
   }
 
@@ -343,6 +351,127 @@ export class Renderer {
     if (dim === 2) return focused ? 0.18 : 0.13;
     if (dim === 3) return focused ? 0.11 : 0.07;
     return 0.05;
+  }
+
+  private formatNodeLabel(nodeId: string): string {
+    return nodeId.split("/").pop()?.replace(/\.md$/, "") ?? nodeId;
+  }
+
+  private simplexPathText(nodeId: string, simplex: Simplex): string {
+    const ordered = [nodeId, ...simplex.nodes.filter((id) => id !== nodeId)];
+    return ordered.map((id) => this.formatNodeLabel(id)).join(" -> ");
+  }
+
+  private simplexDescriptor(simplex: Simplex): string {
+    const cleanedLabel = simplex.label?.trim();
+    if (cleanedLabel && cleanedLabel.toLowerCase() !== "soft cluster") return cleanedLabel;
+    const signals = (simplex.inferredSignals ?? []).filter((signal) => signal !== "soft-cluster");
+    if (signals.length > 0) {
+      const reasons: string[] = [];
+      const tagCounts = signals
+        .filter((signal) => signal.startsWith("tags:"))
+        .map((signal) => Number(signal.slice("tags:".length)))
+        .filter((value) => Number.isFinite(value) && value > 0);
+      const maxTagCount = tagCounts.length ? Math.max(...tagCounts) : 0;
+      const hasSameFolder = signals.includes("folder:same");
+      const hasTopFolder = signals.includes("folder:top");
+      const hasForwardLink = signals.includes("link:a->b");
+      const hasBackwardLink = signals.includes("link:b->a");
+      const titleScores = signals
+        .filter((signal) => signal.startsWith("title:"))
+        .map((signal) => signal.slice("title:".length));
+      const contentScores = signals
+        .filter((signal) => signal.startsWith("content:"))
+        .map((signal) => signal.slice("content:".length));
+
+      if (hasForwardLink && hasBackwardLink) reasons.push("mutual link");
+      else if (hasForwardLink || hasBackwardLink) reasons.push("direct link");
+      if (maxTagCount > 0) reasons.push(maxTagCount === 1 ? "1 shared tag" : `${maxTagCount} shared tags`);
+      if (hasSameFolder) reasons.push("same folder");
+      else if (hasTopFolder) reasons.push("same top folder");
+      if (titleScores.length) reasons.push("similar titles");
+      if (contentScores.length) reasons.push("similar content");
+
+      return reasons.join(" · ");
+    }
+    if (simplex.dominantSignal === "tags") return "tag relation";
+    if (simplex.dominantSignal === "folder") return "folder relation";
+    if (simplex.dominantSignal === "link") return "link relation";
+    if (simplex.dominantSignal === "semantic") return "semantic relation";
+    if (simplex.dominantSignal === "soft-cluster") return "soft cluster";
+    if (simplex.sourcePath) return this.formatNodeLabel(simplex.sourcePath);
+    return `dim ${simplex.nodes.length - 1} simplex`;
+  }
+
+  private largestNodeContext(nodeId: string): string | null {
+    const containing = this.model.getSimplicesForNode(nodeId)
+      .sort((a, b) => b.nodes.length - a.nodes.length || (b.weight ?? 1) - (a.weight ?? 1));
+    if (containing.length > 0) return this.simplexDescriptor(containing[0]);
+    return null;
+  }
+
+  private drawWrappedText(
+    ctx: CanvasRenderingContext2D,
+    text: string,
+    x: number,
+    y: number,
+    maxWidth: number,
+    lineHeight: number,
+  ): number {
+    const words = text.split(/\s+/).filter(Boolean);
+    if (!words.length) return y;
+    let line = "";
+    let cursorY = y;
+    words.forEach((word) => {
+      const candidate = line ? `${line} ${word}` : word;
+      if (ctx.measureText(candidate).width <= maxWidth || !line) {
+        line = candidate;
+        return;
+      }
+      ctx.fillText(line, x, cursorY);
+      cursorY += lineHeight;
+      line = word;
+    });
+    if (line) ctx.fillText(line, x, cursorY);
+    return cursorY + lineHeight;
+  }
+
+  private drawHoveredNodeOverlay(ctx: CanvasRenderingContext2D): void {
+    const targetNodeId = this.controller.hoveredNodeId ?? this.controller.lockedNodeId;
+    if (!targetNodeId) return;
+    const node = this.model.nodes.get(targetNodeId);
+    if (!node) return;
+    const title = this.formatNodeLabel(targetNodeId);
+    const path = this.largestNodeContext(targetNodeId);
+    const primarySimplex = this.model.getSimplicesForNode(targetNodeId)[0];
+    const [r, g, b] = primarySimplex
+      ? effectiveColorForSimplex(this.model, primarySimplex)
+      : [136, 135, 128];
+    const screenPoint = this.worldToScreen({ x: node.px, y: node.py });
+
+    ctx.save();
+    ctx.font = "700 18px system-ui, sans-serif";
+    const titleWidth = ctx.measureText(title).width;
+    ctx.font = "500 12px system-ui, sans-serif";
+    const pathWidth = path ? Math.min(320, ctx.measureText(path).width) : 0;
+    const width = Math.min(Math.max(titleWidth + 28, pathWidth + 28, 180), 360);
+    const height = path ? 48 : 26;
+    const x = Math.min(Math.max(12, screenPoint.x + 14), this.W - width - 12);
+    const y = Math.min(Math.max(24, screenPoint.y - height - 18), this.H - height - 12);
+
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
+    ctx.shadowColor = this.isDark ? "rgba(10, 14, 22, 0.9)" : "rgba(255, 255, 255, 0.92)";
+    ctx.shadowBlur = 10;
+    ctx.font = "700 18px system-ui, sans-serif";
+    ctx.fillText(title, x, y + 18);
+
+    if (path) {
+      ctx.fillStyle = this.isDark ? "rgba(235,240,248,0.88)" : "rgba(24,28,34,0.84)";
+      ctx.shadowBlur = 8;
+      ctx.font = "500 12px system-ui, sans-serif";
+      this.drawWrappedText(ctx, path, x, y + 36, width, 16);
+    }
+    ctx.restore();
   }
 
   private drawFormalSimplex(ctx: CanvasRenderingContext2D, simplex: Simplex, focusActive: boolean): void {
@@ -493,7 +622,7 @@ export class Renderer {
       }
 
       ctx.font = `${isHovered ? "500" : "400"} 12px system-ui, sans-serif`;
-      const label = node.id.split("/").pop()?.replace(/\.md$/, "") ?? node.id;
+        const label = this.formatNodeLabel(node.id);
       const freeBudgetAvailable = placedFreeLabels < freeLabelBudget;
       const canPlace = this.canPlaceLabel(ctx, occupiedLabels, label, node.px, node.py - 13);
       const forceLabel = isHovered || node.isPinned || focusState.isActive;
@@ -533,6 +662,7 @@ export class Renderer {
     }
 
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this.drawHoveredNodeOverlay(ctx);
   }
 
   private canPlaceLabel(

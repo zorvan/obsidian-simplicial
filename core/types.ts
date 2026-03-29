@@ -68,6 +68,13 @@ export interface PluginSettings {
   linkGraphBaseline: boolean;
   enableInferredEdges: boolean;
   inferenceThreshold: number;
+  enableLinkInference: boolean;
+  enableMutualLinkBonus: boolean;
+  enableSharedTags: boolean;
+  enableTitleOverlap: boolean;
+  enableContentOverlap: boolean;
+  enableSameFolderInference: boolean;
+  enableSameTopFolderInference: boolean;
   linkWeight: number;
   mutualLinkBonus: number;
   sharedTagWeight: number;

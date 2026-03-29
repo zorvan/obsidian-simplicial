@@ -99,6 +99,13 @@ export function inferSimplices(contexts: InferenceContext[], settings: Pick<
   | "linkGraphBaseline"
   | "enableInferredEdges"
   | "inferenceThreshold"
+  | "enableLinkInference"
+  | "enableMutualLinkBonus"
+  | "enableSharedTags"
+  | "enableTitleOverlap"
+  | "enableContentOverlap"
+  | "enableSameFolderInference"
+  | "enableSameTopFolderInference"
   | "linkWeight"
   | "mutualLinkBonus"
   | "sharedTagWeight"
@@ -122,12 +129,12 @@ export function inferSimplices(contexts: InferenceContext[], settings: Pick<
       const signals: string[] = [];
       let hasLinkRelation = false;
 
-      if (a.outgoingLinks.has(b.path)) {
+      if (settings.enableLinkInference !== false && a.outgoingLinks.has(b.path)) {
         hasLinkRelation = true;
         score += settings.linkWeight;
         signals.push("link:a->b");
       }
-      if (b.outgoingLinks.has(a.path)) {
+      if (settings.enableMutualLinkBonus !== false && b.outgoingLinks.has(a.path)) {
         hasLinkRelation = true;
         score += settings.mutualLinkBonus;
         signals.push("link:b->a");
@@ -142,13 +149,13 @@ export function inferSimplices(contexts: InferenceContext[], settings: Pick<
       if (!settings.enableInferredEdges && !hasLinkRelation) continue;
 
       const sharedTags = sharedCount(a.tags, b.tags);
-      if (settings.enableInferredEdges && sharedTags > 0) {
+      if (settings.enableInferredEdges && settings.enableSharedTags !== false && sharedTags > 0) {
         const contribution = Math.min(settings.sharedTagWeight * 3, sharedTags * settings.sharedTagWeight);
         score += contribution;
         signals.push(`tags:${sharedTags}`);
       }
 
-      const titleContribution = settings.enableInferredEdges
+      const titleContribution = settings.enableInferredEdges && settings.enableTitleOverlap !== false
         ? overlapScore(a.titleTokens, b.titleTokens, settings.titleOverlapWeight)
         : 0;
       if (titleContribution > 0) {
@@ -156,7 +163,7 @@ export function inferSimplices(contexts: InferenceContext[], settings: Pick<
         signals.push(`title:${titleContribution.toFixed(2)}`);
       }
 
-      const contentContribution = settings.enableInferredEdges
+      const contentContribution = settings.enableInferredEdges && settings.enableContentOverlap !== false
         ? overlapScore(a.contentTokens, b.contentTokens, settings.contentOverlapWeight)
         : 0;
       if (contentContribution > 0) {
@@ -164,10 +171,10 @@ export function inferSimplices(contexts: InferenceContext[], settings: Pick<
         signals.push(`content:${contentContribution.toFixed(2)}`);
       }
 
-      if (settings.enableInferredEdges && a.folder && a.folder === b.folder) {
+      if (settings.enableInferredEdges && settings.enableSameFolderInference !== false && a.folder && a.folder === b.folder) {
         score += settings.sameFolderWeight;
         signals.push("folder:same");
-      } else if (settings.enableInferredEdges && a.topFolder && a.topFolder === b.topFolder) {
+      } else if (settings.enableInferredEdges && settings.enableSameTopFolderInference !== false && a.topFolder && a.topFolder === b.topFolder) {
         score += settings.sameTopFolderWeight;
         signals.push("folder:top");
       }

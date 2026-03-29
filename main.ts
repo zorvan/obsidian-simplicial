@@ -8,9 +8,10 @@ import {
   TFile,
   type Editor,
   MarkdownView,
+  SliderComponent,
 } from "obsidian";
 import { SimplicialModel } from "./core/model";
-import { normalizeKey } from "./core/normalize";
+import { normalizeKey, resolveNodeId } from "./core/normalize";
 import { logger } from "./core/logger";
 import type { PluginSettings, Simplex } from "./core/types";
 import { VIEW_TYPE_SIMPLICIAL, VIEW_TYPE_SIMPLICIAL_PANEL } from "./core/types";
@@ -77,6 +78,7 @@ export default class SimplicialPlugin extends Plugin {
     this.renderer = new Renderer(this.model, this.engine, this.controller, this.settings, {
       onContextMenu: (target, event) => this.openCanvasContextMenu(target, event),
       onLassoCreate: (nodeIds) => void this.openCreateSimplexModal(nodeIds, nodeIds[0] ?? ""),
+      onNodeOpen: (nodeId) => void this.openNodeNote(nodeId),
     });
     this.index = new VaultIndex(this.app, this.model, this.settings, () => this.engine.wake());
 
@@ -450,7 +452,7 @@ export default class SimplicialPlugin extends Plugin {
         .setIcon("plus-circle")
         .onClick(() => void this.createSimplexFromNode(target.nodeId!)));
       menu.addItem((item) => item
-        .setTitle("Pin / unpin node")
+        .setTitle(this.model.nodes.get(target.nodeId!)?.isPinned ? "Unpin node" : "Pin node")
         .setIcon("pin")
         .onClick(() => {
           this.controller.togglePin(target.nodeId!);
@@ -484,7 +486,8 @@ export default class SimplicialPlugin extends Plugin {
   }
 
   private async openNodeNote(nodeId: string): Promise<void> {
-    const file = this.app.vault.getAbstractFileByPath(nodeId);
+    const direct = this.app.vault.getAbstractFileByPath(nodeId);
+    const file = direct instanceof TFile ? direct : resolveNodeId(nodeId, nodeId, this.app);
     if (!(file instanceof TFile)) {
       new Notice("This node is not backed by a note yet.");
       return;
@@ -599,107 +602,91 @@ class SimplicialSettingTab extends PluginSettingTab {
         });
       });
 
-    new Setting(containerEl)
-      .setName("Max rendered dimension")
-      .setDesc("Highest simplex dimension to draw. A 10-node simplex has dimension 9.")
-      .addSlider((slider) => {
-        slider.setLimits(1, 12, 1);
-        slider.setValue(this.plugin.settings.maxRenderedDim);
-        slider.onChange(async (value) => {
-          this.plugin.settings.maxRenderedDim = value;
-          await this.plugin.saveSettings();
-          this.plugin.renderer.render();
-        });
+    {
+      const setting = new Setting(containerEl)
+        .setName("Max rendered dimension")
+        .setDesc("Highest simplex dimension to draw. A 10-node simplex has dimension 9.");
+      this.addNumberSlider(setting, this.plugin.settings.maxRenderedDim, 1, 12, 1, async (value) => {
+        this.plugin.settings.maxRenderedDim = value;
+        await this.plugin.saveSettings();
+        this.plugin.renderer.render();
       });
+    }
 
-    new Setting(containerEl)
-      .setName("Noise amount")
-      .addSlider((slider) => {
-        slider.setLimits(0, 0.5, 0.01);
-        slider.setValue(this.plugin.settings.noiseAmount);
-        slider.onChange(async (value) => {
-          this.plugin.settings.noiseAmount = value;
-          this.plugin.engine.configure({ noiseAmount: value });
-          await this.plugin.saveSettings();
-        });
+    {
+      const setting = new Setting(containerEl)
+        .setName("Noise amount");
+      this.addNumberSlider(setting, this.plugin.settings.noiseAmount, 0, 0.5, 0.01, async (value) => {
+        this.plugin.settings.noiseAmount = value;
+        this.plugin.engine.configure({ noiseAmount: value });
+        await this.plugin.saveSettings();
       });
+    }
 
-    new Setting(containerEl)
-      .setName("Repulsion strength")
-      .setDesc("Higher values push nodes apart more strongly.")
-      .addSlider((slider) => {
-        slider.setLimits(200, 6000, 100);
-        slider.setValue(this.plugin.settings.repulsionStrength);
-        slider.onChange(async (value) => {
-          this.plugin.settings.repulsionStrength = value;
-          this.plugin.engine.configure({ repulsionStrength: value });
-          await this.plugin.saveSettings();
-        });
+    {
+      const setting = new Setting(containerEl)
+        .setName("Repulsion strength")
+        .setDesc("Higher values push nodes apart more strongly.");
+      this.addNumberSlider(setting, this.plugin.settings.repulsionStrength, 200, 6000, 100, async (value) => {
+        this.plugin.settings.repulsionStrength = value;
+        this.plugin.engine.configure({ repulsionStrength: value });
+        await this.plugin.saveSettings();
       });
+    }
 
-    new Setting(containerEl)
-      .setName("Cohesion strength")
-      .setDesc("Higher values pull connected simplices together more strongly.")
-      .addSlider((slider) => {
-        slider.setLimits(0.001, 0.03, 0.001);
-        slider.setValue(this.plugin.settings.cohesionStrength);
-        slider.onChange(async (value) => {
-          this.plugin.settings.cohesionStrength = value;
-          this.plugin.engine.configure({ cohesionStrength: value });
-          await this.plugin.saveSettings();
-        });
+    {
+      const setting = new Setting(containerEl)
+        .setName("Cohesion strength")
+        .setDesc("Higher values pull connected simplices together more strongly.");
+      this.addNumberSlider(setting, this.plugin.settings.cohesionStrength, 0.001, 0.03, 0.001, async (value) => {
+        this.plugin.settings.cohesionStrength = value;
+        this.plugin.engine.configure({ cohesionStrength: value });
+        await this.plugin.saveSettings();
       });
+    }
 
-    new Setting(containerEl)
-      .setName("Gravity strength")
-      .setDesc("Higher values keep nodes toward the center instead of drifting to the edges.")
-      .addSlider((slider) => {
-        slider.setLimits(0.0001, 0.01, 0.0001);
-        slider.setValue(this.plugin.settings.gravityStrength);
-        slider.onChange(async (value) => {
-          this.plugin.settings.gravityStrength = value;
-          this.plugin.engine.configure({ gravityStrength: value });
-          await this.plugin.saveSettings();
-        });
+    {
+      const setting = new Setting(containerEl)
+        .setName("Gravity strength")
+        .setDesc("Higher values keep nodes toward the center instead of drifting to the edges.");
+      this.addNumberSlider(setting, this.plugin.settings.gravityStrength, 0.0001, 0.01, 0.0001, async (value) => {
+        this.plugin.settings.gravityStrength = value;
+        this.plugin.engine.configure({ gravityStrength: value });
+        await this.plugin.saveSettings();
       });
+    }
 
-    new Setting(containerEl)
-      .setName("Damping")
-      .setDesc("Higher values make motion settle more slowly and glide more.")
-      .addSlider((slider) => {
-        slider.setLimits(0.5, 0.99, 0.01);
-        slider.setValue(this.plugin.settings.dampingFactor);
-        slider.onChange(async (value) => {
-          this.plugin.settings.dampingFactor = value;
-          this.plugin.engine.configure({ dampingFactor: value });
-          await this.plugin.saveSettings();
-        });
+    {
+      const setting = new Setting(containerEl)
+        .setName("Damping")
+        .setDesc("Higher values make motion settle more slowly and glide more.");
+      this.addNumberSlider(setting, this.plugin.settings.dampingFactor, 0.5, 0.99, 0.01, async (value) => {
+        this.plugin.settings.dampingFactor = value;
+        this.plugin.engine.configure({ dampingFactor: value });
+        await this.plugin.saveSettings();
       });
+    }
 
-    new Setting(containerEl)
-      .setName("Boundary padding")
-      .setDesc("Minimum distance nodes keep from the canvas edges.")
-      .addSlider((slider) => {
-        slider.setLimits(0, 200, 5);
-        slider.setValue(this.plugin.settings.boundaryPadding);
-        slider.onChange(async (value) => {
-          this.plugin.settings.boundaryPadding = value;
-          this.plugin.engine.configure({ boundaryPadding: value });
-          await this.plugin.saveSettings();
-        });
+    {
+      const setting = new Setting(containerEl)
+        .setName("Boundary padding")
+        .setDesc("Minimum distance nodes keep from the canvas edges.");
+      this.addNumberSlider(setting, this.plugin.settings.boundaryPadding, 0, 200, 5, async (value) => {
+        this.plugin.settings.boundaryPadding = value;
+        this.plugin.engine.configure({ boundaryPadding: value });
+        await this.plugin.saveSettings();
       });
+    }
 
-    new Setting(containerEl)
-      .setName("Sleep threshold")
-      .addSlider((slider) => {
-        slider.setLimits(0.001, 0.1, 0.001);
-        slider.setValue(this.plugin.settings.sleepThreshold);
-        slider.onChange(async (value) => {
-          this.plugin.settings.sleepThreshold = value;
-          this.plugin.engine.configure({ sleepThreshold: value });
-          await this.plugin.saveSettings();
-        });
+    {
+      const setting = new Setting(containerEl)
+        .setName("Sleep threshold");
+      this.addNumberSlider(setting, this.plugin.settings.sleepThreshold, 0.001, 0.1, 0.001, async (value) => {
+        this.plugin.settings.sleepThreshold = value;
+        this.plugin.engine.configure({ sleepThreshold: value });
+        await this.plugin.saveSettings();
       });
+    }
 
     new Setting(containerEl)
       .setName("Dark mode")
@@ -736,17 +723,15 @@ class SimplicialSettingTab extends PluginSettingTab {
         });
       });
 
-    new Setting(containerEl)
-      .setName("Inference threshold")
-      .setDesc("Minimum combined signal needed before an inferred edge is created.")
-      .addSlider((slider) => {
-        slider.setLimits(0.05, 0.6, 0.01);
-        slider.setValue(this.plugin.settings.inferenceThreshold);
-        slider.onChange(async (value) => {
-          this.plugin.settings.inferenceThreshold = value;
-          await this.plugin.saveSettings();
-        });
+    {
+      const setting = new Setting(containerEl)
+        .setName("Inference threshold")
+        .setDesc("Minimum combined signal needed before an inferred edge is created.");
+      this.addNumberSlider(setting, this.plugin.settings.inferenceThreshold, 0.05, 0.6, 0.01, async (value) => {
+        this.plugin.settings.inferenceThreshold = value;
+        await this.plugin.saveSettings();
       });
+    }
 
     new Setting(containerEl)
       .setName("Show suggestions")
@@ -760,37 +745,33 @@ class SimplicialSettingTab extends PluginSettingTab {
         });
       });
 
-    new Setting(containerEl)
-      .setName("Suggestion threshold")
-      .setDesc("Confidence level required before a suggestion is surfaced in the UI.")
-      .addSlider((slider) => {
-        slider.setLimits(0.2, 0.95, 0.01);
-        slider.setValue(this.plugin.settings.suggestionThreshold);
-        slider.onChange(async (value) => {
-          this.plugin.settings.suggestionThreshold = value;
-          await this.plugin.saveSettings();
-        });
+    {
+      const setting = new Setting(containerEl)
+        .setName("Suggestion threshold")
+        .setDesc("Confidence level required before a suggestion is surfaced in the UI.");
+      this.addNumberSlider(setting, this.plugin.settings.suggestionThreshold, 0.2, 0.95, 0.01, async (value) => {
+        this.plugin.settings.suggestionThreshold = value;
+        await this.plugin.saveSettings();
       });
+    }
 
-    this.addWeightSlider(containerEl, "Link weight", "Strength added by a resolved outbound link.", "linkWeight", 0.05, 0.6, 0.01);
-    this.addWeightSlider(containerEl, "Mutual link bonus", "Extra weight when both notes link each other.", "mutualLinkBonus", 0.05, 0.6, 0.01);
-    this.addWeightSlider(containerEl, "Shared tag weight", "Weight contributed by each shared tag.", "sharedTagWeight", 0.01, 0.2, 0.01);
-    this.addWeightSlider(containerEl, "Title overlap weight", "Maximum title-token overlap contribution.", "titleOverlapWeight", 0.01, 0.3, 0.01);
-    this.addWeightSlider(containerEl, "Content overlap weight", "Maximum body-text overlap contribution.", "contentOverlapWeight", 0.01, 0.3, 0.01);
-    this.addWeightSlider(containerEl, "Same folder weight", "Boost when two notes share the same folder.", "sameFolderWeight", 0, 0.2, 0.01);
-    this.addWeightSlider(containerEl, "Top folder weight", "Boost when two notes share the same top-level folder.", "sameTopFolderWeight", 0, 0.2, 0.01);
+    this.addWeightSlider(containerEl, "Link weight", "Strength added by a resolved outbound link.", "linkWeight", "enableLinkInference", 0, 0.6, 0.01);
+    this.addWeightSlider(containerEl, "Mutual link bonus", "Extra weight when both notes link each other.", "mutualLinkBonus", "enableMutualLinkBonus", 0, 0.6, 0.01);
+    this.addWeightSlider(containerEl, "Shared tag weight", "Weight contributed by each shared tag.", "sharedTagWeight", "enableSharedTags", 0, 0.2, 0.01);
+    this.addWeightSlider(containerEl, "Title overlap weight", "Maximum title-token overlap contribution.", "titleOverlapWeight", "enableTitleOverlap", 0, 0.3, 0.01);
+    this.addWeightSlider(containerEl, "Content overlap weight", "Maximum body-text overlap contribution.", "contentOverlapWeight", "enableContentOverlap", 0, 0.3, 0.01);
+    this.addWeightSlider(containerEl, "Same folder weight", "Boost when two notes share the same folder.", "sameFolderWeight", "enableSameFolderInference", 0, 0.2, 0.01);
+    this.addWeightSlider(containerEl, "Top folder weight", "Boost when two notes share the same top-level folder.", "sameTopFolderWeight", "enableSameTopFolderInference", 0, 0.2, 0.01);
 
-    new Setting(containerEl)
-      .setName("Command simplex size")
-      .setDesc("How many nodes the create-from-open-note command tries to include.")
-      .addSlider((slider) => {
-        slider.setLimits(2, 6, 1);
-        slider.setValue(this.plugin.settings.commandSimplexSize);
-        slider.onChange(async (value) => {
-          this.plugin.settings.commandSimplexSize = value;
-          await this.plugin.saveSettings();
-        });
+    {
+      const setting = new Setting(containerEl)
+        .setName("Command simplex size")
+        .setDesc("How many nodes the create-from-open-note command tries to include.");
+      this.addNumberSlider(setting, this.plugin.settings.commandSimplexSize, 2, 6, 1, async (value) => {
+        this.plugin.settings.commandSimplexSize = value;
+        await this.plugin.saveSettings();
       });
+    }
 
     new Setting(containerEl)
       .setName("Formal mode")
@@ -804,44 +785,38 @@ class SimplicialSettingTab extends PluginSettingTab {
         });
       });
 
-    new Setting(containerEl)
-      .setName("Sparse edge length")
-      .setDesc("Preferred spacing for sparse link-only graphs.")
-      .addSlider((slider) => {
-        slider.setLimits(60, 280, 5);
-        slider.setValue(this.plugin.settings.sparseEdgeLength);
-        slider.onChange(async (value) => {
-          this.plugin.settings.sparseEdgeLength = value;
-          this.plugin.engine.configure({ sparseEdgeLength: value });
-          await this.plugin.saveSettings();
-        });
+    {
+      const setting = new Setting(containerEl)
+        .setName("Sparse edge length")
+        .setDesc("Preferred spacing for sparse link-only graphs.");
+      this.addNumberSlider(setting, this.plugin.settings.sparseEdgeLength, 60, 280, 5, async (value) => {
+        this.plugin.settings.sparseEdgeLength = value;
+        this.plugin.engine.configure({ sparseEdgeLength: value });
+        await this.plugin.saveSettings();
       });
+    }
 
-    new Setting(containerEl)
-      .setName("Sparse gravity boost")
-      .setDesc("Extra centering force when the graph is mostly pairwise and sparse.")
-      .addSlider((slider) => {
-        slider.setLimits(1, 4, 0.1);
-        slider.setValue(this.plugin.settings.sparseGravityBoost);
-        slider.onChange(async (value) => {
-          this.plugin.settings.sparseGravityBoost = value;
-          this.plugin.engine.configure({ sparseGravityBoost: value });
-          await this.plugin.saveSettings();
-        });
+    {
+      const setting = new Setting(containerEl)
+        .setName("Sparse gravity boost")
+        .setDesc("Extra centering force when the graph is mostly pairwise and sparse.");
+      this.addNumberSlider(setting, this.plugin.settings.sparseGravityBoost, 1, 4, 0.1, async (value) => {
+        this.plugin.settings.sparseGravityBoost = value;
+        this.plugin.engine.configure({ sparseGravityBoost: value });
+        await this.plugin.saveSettings();
       });
+    }
 
-    new Setting(containerEl)
-      .setName("Label density")
-      .setDesc("Controls how many non-focused labels are allowed before decluttering hides the rest.")
-      .addSlider((slider) => {
-        slider.setLimits(0.1, 1, 0.05);
-        slider.setValue(this.plugin.settings.labelDensity);
-        slider.onChange(async (value) => {
-          this.plugin.settings.labelDensity = value;
-          await this.plugin.saveSettings();
-          this.plugin.renderer.render();
-        });
+    {
+      const setting = new Setting(containerEl)
+        .setName("Label density")
+        .setDesc("Controls how many non-focused labels are allowed before decluttering hides the rest.");
+      this.addNumberSlider(setting, this.plugin.settings.labelDensity, 0.1, 1, 0.05, async (value) => {
+        this.plugin.settings.labelDensity = value;
+        await this.plugin.saveSettings();
+        this.plugin.renderer.render();
       });
+    }
 
     new Setting(containerEl)
       .setName("Open metadata panel after create")
@@ -854,17 +829,40 @@ class SimplicialSettingTab extends PluginSettingTab {
         });
       });
 
-    new Setting(containerEl)
-      .setName("Metadata hover delay")
-      .setDesc("Delay before hover-driven metadata UI should appear.")
-      .addSlider((slider) => {
-        slider.setLimits(250, 2000, 50);
-        slider.setValue(this.plugin.settings.metadataHoverDelayMs);
-        slider.onChange(async (value) => {
-          this.plugin.settings.metadataHoverDelayMs = value;
-          await this.plugin.saveSettings();
-        });
+    {
+      const setting = new Setting(containerEl)
+        .setName("Metadata hover delay")
+        .setDesc("Delay before hover-driven metadata UI should appear.");
+      this.addNumberSlider(setting, this.plugin.settings.metadataHoverDelayMs, 250, 2000, 50, async (value) => {
+        this.plugin.settings.metadataHoverDelayMs = value;
+        await this.plugin.saveSettings();
       });
+    }
+  }
+
+  private addNumberSlider(
+    setting: Setting,
+    initialValue: number,
+    min: number,
+    max: number,
+    step: number,
+    onChange: (value: number) => Promise<void>,
+  ): void {
+    setting.addSlider((slider) => {
+      const valueEl = setting.controlEl.createSpan({ cls: "simplicial-setting-value" });
+      const format = (value: number): string => {
+        const decimals = step >= 1 ? 0 : `${step}`.split(".")[1]?.length ?? 0;
+        return value.toFixed(decimals).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
+      };
+
+      valueEl.setText(format(initialValue));
+      slider.setLimits(min, max, step);
+      slider.setValue(initialValue);
+      slider.onChange(async (value) => {
+        valueEl.setText(format(value));
+        await onChange(value);
+      });
+    });
   }
 
   private addWeightSlider(
@@ -881,20 +879,51 @@ class SimplicialSettingTab extends PluginSettingTab {
       | "sameFolderWeight"
       | "sameTopFolderWeight"
     >,
+    enabledKey: keyof Pick<
+      PluginSettings,
+      | "enableLinkInference"
+      | "enableMutualLinkBonus"
+      | "enableSharedTags"
+      | "enableTitleOverlap"
+      | "enableContentOverlap"
+      | "enableSameFolderInference"
+      | "enableSameTopFolderInference"
+    >,
     min: number,
     max: number,
     step: number,
   ): void {
-    new Setting(containerEl)
+    const setting = new Setting(containerEl)
       .setName(name)
-      .setDesc(desc)
-      .addSlider((slider) => {
-        slider.setLimits(min, max, step);
-        slider.setValue(this.plugin.settings[key]);
-        slider.onChange(async (value) => {
-          this.plugin.settings[key] = value as never;
-          await this.plugin.saveSettings();
-        });
+      .setDesc(desc);
+    let sliderRef: SliderComponent | null = null;
+    const format = (value: number): string => {
+      const decimals = step >= 1 ? 0 : `${step}`.split(".")[1]?.length ?? 0;
+      return value.toFixed(decimals).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
+    };
+
+    setting.addToggle((toggle) => {
+      toggle.setTooltip("Enable or disable this inference signal");
+      toggle.setValue(this.plugin.settings[enabledKey]);
+      toggle.onChange(async (value) => {
+        this.plugin.settings[enabledKey] = value as never;
+        sliderRef?.setDisabled(!value);
+        await this.plugin.saveSettings();
       });
+    });
+
+    setting.addSlider((slider) => {
+      sliderRef = slider;
+      const valueEl = setting.controlEl.createSpan({ cls: "simplicial-setting-value" });
+      valueEl.setText(format(this.plugin.settings[key]));
+      slider.setLimits(min, max, step);
+      slider.setValue(this.plugin.settings[key]);
+      slider.setDisabled(!this.plugin.settings[enabledKey]);
+      slider.onChange(async (value) => {
+        valueEl.setText(format(value));
+        this.plugin.settings[key] = value as never;
+        await this.plugin.saveSettings();
+      });
+    });
   }
 }
