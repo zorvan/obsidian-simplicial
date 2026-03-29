@@ -196,6 +196,8 @@ export function getDefaultSettings(): PluginSettings {
     sparseEdgeLength: 150,
     sparseGravityBoost: 1.8,
     labelDensity: 0.42,
+    renderFilterMetric: "weight",
+    renderFilterThreshold: 0,
     pinnedNodes: {},
   };
 }

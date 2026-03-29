@@ -48,6 +48,79 @@ function dominantSignal(signals: string[]): string | undefined {
   return undefined;
 }
 
+// Optimized inference using inverted indexing for O(n) preprocessing + O(candidates) similarity
+function buildInvertedIndex(contexts: InferenceContext[]): Map<string, Set<string>> {
+  const index = new Map<string, Set<string>>();
+
+  contexts.forEach(context => {
+    // Index title tokens
+    context.titleTokens.forEach(token => {
+      if (!index.has(token)) index.set(token, new Set());
+      index.get(token)!.add(context.path);
+    });
+
+    // Index content tokens (but only rare ones to avoid noise)
+    context.contentTokens.forEach(token => {
+      // Only index tokens that appear in few documents to focus on distinctive terms
+      const docCount = index.get(token)?.size ?? 0;
+      if (docCount < Math.max(3, contexts.length * 0.1)) { // Max 10% of documents or 3 docs
+        if (!index.has(token)) index.set(token, new Set());
+        index.get(token)!.add(context.path);
+      }
+    });
+
+    // Index tags
+    context.tags.forEach(tag => {
+      const tagKey = `tag:${tag}`;
+      if (!index.has(tagKey)) index.set(tagKey, new Set());
+      index.get(tagKey)!.add(context.path);
+    });
+  });
+
+  return index;
+}
+
+function findCandidatePairs(context: InferenceContext, index: Map<string, Set<string>>, allPaths: Set<string>): string[] {
+  const candidates = new Set<string>();
+
+  // Find candidates via shared tokens
+  context.titleTokens.forEach(token => {
+    index.get(token)?.forEach(path => {
+      if (path !== context.path) candidates.add(path);
+    });
+  });
+
+  context.contentTokens.forEach(token => {
+    index.get(token)?.forEach(path => {
+      if (path !== context.path) candidates.add(path);
+    });
+  });
+
+  context.tags.forEach(tag => {
+    const tagKey = `tag:${tag}`;
+    index.get(tagKey)?.forEach(path => {
+      if (path !== context.path) candidates.add(path);
+    });
+  });
+
+  // Add candidates from same folder (limited to avoid explosion)
+  const folderKey = `folder:${context.folder}`;
+  if (index.has(folderKey)) {
+    index.get(folderKey)!.forEach(path => {
+      if (path !== context.path) candidates.add(path);
+    });
+  }
+
+  // Limit candidates to prevent excessive computation (max 50 per document)
+  const candidateArray = Array.from(candidates);
+  if (candidateArray.length > 50) {
+    // Prioritize by some heuristic - for now just take first 50
+    candidateArray.splice(50);
+  }
+
+  return candidateArray;
+}
+
 function overlapScore(a: Set<string>, b: Set<string>, maxContribution: number): number {
   if (!a.size || !b.size) return 0;
   const shared = sharedCount(a, b);
@@ -116,12 +189,35 @@ export function inferSimplicesLegacy(contexts: InferenceContext[], settings: Pic
     logger.info("inference", "Inferred simplices disabled by settings");
     return [];
   }
+
   const simplices: Simplex[] = [];
   const pairScores = new Map<string, { nodes: [string, string]; weight: number; signals: string[] }>();
-  for (let i = 0; i < contexts.length; i++) {
-    for (let j = i + 1; j < contexts.length; j++) {
-      const a = contexts[i];
-      const b = contexts[j];
+  const contextMap = new Map(contexts.map(ctx => [ctx.path, ctx]));
+
+  // Build inverted index for efficient candidate finding
+  const invertedIndex = buildInvertedIndex(contexts);
+  const allPaths = new Set(contexts.map(ctx => ctx.path));
+
+  // Add folder indexing for same-folder inference
+  contexts.forEach(ctx => {
+    const folderKey = `folder:${ctx.folder}`;
+    if (!invertedIndex.has(folderKey)) invertedIndex.set(folderKey, new Set());
+    invertedIndex.get(folderKey)!.add(ctx.path);
+  });
+
+  // Process each document and its candidates (O(n * k) where k << n)
+  contexts.forEach(context => {
+    const candidates = findCandidatePairs(context, invertedIndex, allPaths);
+
+    candidates.forEach(candidatePath => {
+      const otherContext = contextMap.get(candidatePath);
+      if (!otherContext) return;
+
+      // Ensure we only process each pair once
+      if (context.path > candidatePath) return;
+
+      const a = context;
+      const b = otherContext;
       let score = 0;
       const signals: string[] = [];
       let hasLinkRelation = false;
@@ -143,7 +239,7 @@ export function inferSimplicesLegacy(contexts: InferenceContext[], settings: Pic
         signals.length = 0;
       }
 
-      if (!settings.enableInferredEdges && !hasLinkRelation) continue;
+      if (!settings.enableInferredEdges && !hasLinkRelation) return;
 
       const sharedTags = sharedCount(a.tags, b.tags);
       if (settings.enableInferredEdges && settings.enableSharedTags !== false && sharedTags > 0) {
@@ -176,7 +272,7 @@ export function inferSimplicesLegacy(contexts: InferenceContext[], settings: Pic
         signals.push("folder:top");
       }
 
-      if (!hasLinkRelation && score < settings.inferenceThreshold) continue;
+      if (!hasLinkRelation && score < settings.inferenceThreshold) return;
       const weight = Math.max(0.1, Math.min(1, Number(score.toFixed(2))));
       simplices.push({
         nodes: [a.path, b.path],
@@ -196,22 +292,44 @@ export function inferSimplicesLegacy(contexts: InferenceContext[], settings: Pic
         weight,
         signals: [...signals],
       });
-    }
-  }
+    });
+  });
 
+  // Optimized triad detection - only check triads among documents that have strong pairwise connections
   if (settings.enableInferredEdges) {
-    const strongPairThreshold = Math.max(settings.inferenceThreshold, 0.18);
-    for (let i = 0; i < contexts.length; i++) {
-      for (let j = i + 1; j < contexts.length; j++) {
-        for (let k = j + 1; k < contexts.length; k++) {
-          const a = contexts[i].path;
-          const b = contexts[j].path;
-          const c = contexts[k].path;
+    const strongPairs = new Map<string, { partner: string; weight: number; signals: string[] }[]>();
+    pairScores.forEach((pair, key) => {
+      const [a, b] = pair.nodes;
+      if (pair.weight >= Math.max(settings.inferenceThreshold, 0.18)) {
+        if (!strongPairs.has(a)) strongPairs.set(a, []);
+        if (!strongPairs.has(b)) strongPairs.set(b, []);
+        strongPairs.get(a)!.push({ partner: b, weight: pair.weight, signals: pair.signals });
+        strongPairs.get(b)!.push({ partner: a, weight: pair.weight, signals: pair.signals });
+      }
+    });
+
+    // Only check triads among documents with multiple strong connections
+    const triadCandidates = Array.from(strongPairs.entries())
+      .filter(([_, partners]) => partners.length >= 2)
+      .map(([path, _]) => path);
+
+    triadCandidates.forEach(a => {
+      const aPartners = strongPairs.get(a) || [];
+      for (let i = 0; i < aPartners.length; i++) {
+        for (let j = i + 1; j < aPartners.length; j++) {
+          const b = aPartners[i].partner;
+          const c = aPartners[j].partner;
+
+          // Ensure consistent ordering
+          const sortedNodes = [a, b, c].sort();
+          if (sortedNodes[0] !== a) continue; // Only process when 'a' is the first in sorted order
+
           const ab = pairScores.get(pairKey(a, b));
           const ac = pairScores.get(pairKey(a, c));
           const bc = pairScores.get(pairKey(b, c));
+
           if (!ab || !ac || !bc) continue;
-          if (ab.weight < strongPairThreshold || ac.weight < strongPairThreshold || bc.weight < strongPairThreshold) continue;
+
           const mergedSignals = new Set<string>([
             ...ab.signals,
             ...ac.signals,
@@ -233,10 +351,10 @@ export function inferSimplicesLegacy(contexts: InferenceContext[], settings: Pic
           });
         }
       }
-    }
+    });
   }
 
-  logger.debug("inference", "Rebuilt inferred simplices", {
+  logger.debug("inference", "Rebuilt inferred simplices (optimized)", {
     fileCount: contexts.length,
     inferredSimplexCount: simplices.length
   });

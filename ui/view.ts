@@ -1,13 +1,10 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
 import { SimplicialModel } from "../core/model";
-import type { PluginSettings } from "../core/types";
+import type { PluginSettings, RenderFilterMetric } from "../core/types";
 import { VIEW_TYPE_SIMPLICIAL } from "../core/types";
 import { Renderer } from "../render/renderer";
 
 export class SimplicialView extends ItemView {
-  private unsubscribe?: () => void;
-  private statsEl?: HTMLElement;
-
   constructor(
     leaf: WorkspaceLeaf,
     private model: SimplicialModel,
@@ -25,7 +22,7 @@ export class SimplicialView extends ItemView {
   getDisplayText(): string {
     return "Simplicial Graph";
   }
-
+ 
   async onOpen(): Promise<void> {
     const { contentEl } = this;
     contentEl.empty();
@@ -33,21 +30,16 @@ export class SimplicialView extends ItemView {
     const canvasWrap = contentEl.createDiv({ cls: "simplicial-view-wrap" });
     const hud = contentEl.createDiv({ cls: "simplicial-hud" });
     const legend = contentEl.createDiv({ cls: "simplicial-legend" });
-    this.statsEl = hud.createDiv({ cls: "simplicial-stats" });
-    const hints = hud.createDiv({ cls: "simplicial-hints" });
-    hints.setText("Wheel zooms. Left-drag pans empty space or moves nodes. Right-click opens actions. Shift-drag lassos. Double-click toggles pin.");
+    this.renderFiltrationControls(hud);
     this.renderLegend(legend);
-    this.refreshStats();
     const filters = contentEl.createDiv({ cls: "simplicial-filters" });
     this.addFilterToggle(filters, "edges", () => this.settings.showEdges, (value) => (this.settings.showEdges = value));
     this.addFilterToggle(filters, "clusters", () => this.settings.showClusters, (value) => (this.settings.showClusters = value));
     this.addFilterToggle(filters, "cores", () => this.settings.showCores, (value) => (this.settings.showCores = value));
-    this.unsubscribe = this.model.subscribe(() => this.refreshStats());
     this.renderer.init(canvasWrap);
   }
 
   async onClose(): Promise<void> {
-    this.unsubscribe?.();
     this.renderer.destroy();
   }
 
@@ -65,24 +57,41 @@ export class SimplicialView extends ItemView {
     });
   }
 
-  private refreshStats(): void {
-    if (!this.statsEl) return;
-    const summary = this.model.getAnalysisSummary();
-    this.statsEl.empty();
-    this.statsEl.createEl("div", {
-      text: `${summary.nodeCount} nodes · ${summary.edgeCount} edges · ${summary.clusterCount} clusters · ${summary.coreCount} cores · ${summary.inferredCount} inferred`
+  private renderFiltrationControls(container: HTMLElement): void {
+    const wrap = container.createDiv({ cls: "simplicial-filtration" });
+    wrap.createSpan({ text: "Filter" });
+    const metricSelect = wrap.createEl("select");
+    const metrics: Array<{ value: RenderFilterMetric; label: string }> = [
+      { value: "weight", label: "weight" },
+      { value: "confidence", label: "confidence" },
+      { value: "decayed-weight", label: "decayed" },
+    ];
+    metrics.forEach((metric) => {
+      const option = metricSelect.createEl("option", { text: metric.label });
+      option.value = metric.value;
+      option.selected = this.settings.renderFilterMetric === metric.value;
     });
-    this.statsEl.createEl("div", {
-      text: `${summary.connectedComponents} components · avg degree ${summary.averageDegree} · ${summary.suggestedCount} suggestions`
+
+    const slider = wrap.createEl("input", { type: "range" });
+    slider.min = "0";
+    slider.max = "1";
+    slider.step = "0.01";
+    slider.value = String(this.settings.renderFilterThreshold);
+
+    const valueEl = wrap.createSpan({
+      text: this.settings.renderFilterThreshold.toFixed(2).replace(/\.00$/, ""),
     });
-    if (summary.maxDegreeNodeId) {
-      this.statsEl.createEl("div", {
-        text: `Highest degree: ${summary.maxDegreeNodeId.replace(/\.md$/, "")} (${summary.maxDegree})`
-      });
-    }
-    this.statsEl.createEl("div", {
-      text: this.settings.formalMode ? "Formal mode emphasizes exact combinatorics." : "Ambient mode emphasizes felt structure."
-    });
+
+    const apply = (): void => {
+      this.settings.renderFilterMetric = metricSelect.value as RenderFilterMetric;
+      this.settings.renderFilterThreshold = Number(slider.value);
+      valueEl.setText(this.settings.renderFilterThreshold.toFixed(2).replace(/\.00$/, ""));
+      this.onSettingsChanged();
+      this.renderer.render();
+    };
+
+    metricSelect.addEventListener("change", apply);
+    slider.addEventListener("input", apply);
   }
 
   private renderLegend(container: HTMLElement): void {

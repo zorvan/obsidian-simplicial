@@ -1,4 +1,4 @@
-import type { LayoutNode, PluginSettings, Rect, Simplex } from "../core/types";
+import type { LayoutNode, PluginSettings, Rect, RenderFilterMetric, Simplex } from "../core/types";
 import { normalizeKey } from "../core/normalize";
 import { SimplicialModel } from "../core/model";
 import { LayoutEngine } from "../layout/engine";
@@ -76,6 +76,16 @@ export class Renderer {
     this.render();
   };
 
+  // Performance optimizations
+  private textWidthCache = new Map<string, number>();
+  private viewportPadding = 100; // Extra padding around viewport for smooth scrolling
+  private lastRenderedNodes = new Set<string>(); // Track which nodes were rendered last frame
+  private progressiveSceneKey = "";
+  private progressiveNodeBudget = 0;
+  private progressiveSimplexBudget = 0;
+  private readonly progressiveNodeStep = 140;
+  private readonly progressiveSimplexStep = 220;
+
   constructor(
     private model: SimplicialModel,
     private engine: LayoutEngine,
@@ -83,6 +93,132 @@ export class Renderer {
     private settings: PluginSettings,
     private callbacks: RendererCallbacks = {},
   ) {}
+
+  // Cached text measurement for performance
+  private measureTextWidth(ctx: CanvasRenderingContext2D, text: string): number {
+    if (this.textWidthCache.has(text)) {
+      return this.textWidthCache.get(text)!;
+    }
+    const width = ctx.measureText(text).width;
+    // Limit cache size to prevent memory leaks
+    if (this.textWidthCache.size > 1000) {
+      this.textWidthCache.clear();
+    }
+    this.textWidthCache.set(text, width);
+    return width;
+  }
+
+  // Viewport culling: only render nodes visible on screen
+  private getVisibleNodes(nodes: LayoutNode[]): LayoutNode[] {
+    const viewportLeft = -this.viewOffsetX / this.viewZoom - this.viewportPadding;
+    const viewportTop = -this.viewOffsetY / this.viewZoom - this.viewportPadding;
+    const viewportRight = (-this.viewOffsetX + this.W) / this.viewZoom + this.viewportPadding;
+    const viewportBottom = (-this.viewOffsetY + this.H) / this.viewZoom + this.viewportPadding;
+
+    return nodes.filter(node =>
+      node.px >= viewportLeft &&
+      node.px <= viewportRight &&
+      node.py >= viewportTop &&
+      node.py <= viewportBottom
+    );
+  }
+
+  private simplexStrength(simplex: Simplex, metric: RenderFilterMetric): number {
+    if (metric === "confidence") return simplex.confidence ?? simplex.weight ?? 0;
+    if (metric === "decayed-weight") return simplex.decayedWeight ?? simplex.weight ?? simplex.confidence ?? 0;
+    return simplex.weight ?? simplex.decayedWeight ?? simplex.confidence ?? 0;
+  }
+
+  private passesRenderFilter(simplex: Simplex): boolean {
+    return this.simplexStrength(simplex, this.settings.renderFilterMetric) >= this.settings.renderFilterThreshold;
+  }
+
+  private progressiveNodeKey(nodes: LayoutNode[]): string {
+    const hovered = this.controller.hoveredNodeId ?? "";
+    const locked = this.controller.lockedNodeId ?? "";
+    return [
+      this.viewZoom.toFixed(3),
+      this.viewOffsetX.toFixed(1),
+      this.viewOffsetY.toFixed(1),
+      hovered,
+      locked,
+      nodes.length,
+      this.settings.renderFilterMetric,
+      this.settings.renderFilterThreshold.toFixed(2),
+    ].join("|");
+  }
+
+  private rankVisibleNodes(nodes: LayoutNode[], focusNodeIds: Set<string>): LayoutNode[] {
+    const centerX = (this.W / 2 - this.viewOffsetX) / this.viewZoom;
+    const centerY = (this.H / 2 - this.viewOffsetY) / this.viewZoom;
+    const hovered = this.controller.hoveredNodeId;
+    const locked = this.controller.lockedNodeId;
+
+    return [...nodes].sort((a, b) => {
+      const aPriority = (a.id === hovered ? 6 : 0) + (a.id === locked ? 5 : 0) + (focusNodeIds.has(a.id) ? 4 : 0) + (a.isPinned ? 2 : 0);
+      const bPriority = (b.id === hovered ? 6 : 0) + (b.id === locked ? 5 : 0) + (focusNodeIds.has(b.id) ? 4 : 0) + (b.isPinned ? 2 : 0);
+      if (aPriority !== bPriority) return bPriority - aPriority;
+
+      const aDist = (a.px - centerX) ** 2 + (a.py - centerY) ** 2;
+      const bDist = (b.px - centerX) ** 2 + (b.py - centerY) ** 2;
+      return aDist - bDist;
+    });
+  }
+
+  private getProgressiveRenderableNodes(nodes: LayoutNode[], focusNodeIds: Set<string>): LayoutNode[] {
+    const ranked = this.rankVisibleNodes(nodes, focusNodeIds);
+    const sceneKey = this.progressiveNodeKey(ranked);
+    if (sceneKey !== this.progressiveSceneKey) {
+      this.progressiveSceneKey = sceneKey;
+      this.progressiveNodeBudget = Math.min(ranked.length, this.progressiveNodeStep);
+      this.progressiveSimplexBudget = this.progressiveSimplexStep;
+    } else {
+      this.progressiveNodeBudget = Math.min(ranked.length, this.progressiveNodeBudget + this.progressiveNodeStep);
+      this.progressiveSimplexBudget += this.progressiveSimplexStep;
+    }
+    return ranked.slice(0, this.progressiveNodeBudget);
+  }
+
+  private getRenderableSimplices(
+    simplices: Array<[string, Simplex]>,
+    renderedNodeIds: Set<string>,
+    focusSimplexKeys: Set<string>,
+  ): Array<[string, Simplex]> {
+    const ranked = simplices
+      .filter(([, simplex]) => this.passesRenderFilter(simplex))
+      .filter(([, simplex]) => simplex.nodes.every((nodeId) => renderedNodeIds.has(nodeId)))
+      .sort((a, b) => {
+        const [keyA, simplexA] = a;
+        const [keyB, simplexB] = b;
+        const scoreA = (focusSimplexKeys.has(keyA) ? 6 : 0) + (simplexA.suggested ? 2 : 0) + this.simplexStrength(simplexA, this.settings.renderFilterMetric) + simplexA.nodes.length * 0.05;
+        const scoreB = (focusSimplexKeys.has(keyB) ? 6 : 0) + (simplexB.suggested ? 2 : 0) + this.simplexStrength(simplexB, this.settings.renderFilterMetric) + simplexB.nodes.length * 0.05;
+        return scoreB - scoreA;
+      });
+
+    return ranked.slice(0, this.progressiveSimplexBudget);
+  }
+
+  // Optimized label placement using spatial hashing
+  private canPlaceLabelFast(
+    occupied: Box[],
+    text: string,
+    x: number,
+    y: number,
+  ): boolean {
+    if (!this.ctx) return false;
+    const width = this.measureTextWidth(this.ctx, text) + 12;
+    const left = x - width / 2;
+    const top = y - 14;
+    const candidate = { left, top, right: left + width, bottom: top + 18 };
+
+    // Quick spatial check - only check against nearby occupied boxes
+    return !occupied.some((box) =>
+      candidate.left < box.right &&
+      candidate.right > box.left &&
+      candidate.top < box.bottom &&
+      candidate.bottom > box.top,
+    );
+  }
 
   init(container: HTMLElement): void {
     if (this.canvas && !this.canvas.isConnected) {
@@ -543,23 +679,33 @@ export class Renderer {
   render(): void {
     if (!this.ctx) return;
     const ctx = this.ctx;
-    const nodes = this.model.getAllNodes();
+    const allNodes = this.model.getAllNodes();
     const simplices = [...this.model.simplices.entries()]
       .filter(([, simplex]) => simplex.nodes.length - 1 <= this.settings.maxRenderedDim)
       .sort((a, b) => b[1].nodes.length - a[1].nodes.length);
     const focusState = this.controller.getFocusState();
-    this.updateViewTransform(nodes);
+
+    this.updateViewTransform(allNodes);
+    const visibleNodes = this.getVisibleNodes(allNodes);
+    const renderableNodes = this.getProgressiveRenderableNodes(visibleNodes, focusState.activeNodeIds);
+    const renderedNodeIds = new Set(renderableNodes.map((node) => node.id));
+    const renderableSimplices = this.getRenderableSimplices(simplices, renderedNodeIds, focusState.activeSimplexKeys);
 
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, this.W, this.H);
     ctx.translate(this.viewOffsetX, this.viewOffsetY);
     ctx.scale(this.viewZoom, this.viewZoom);
+
+    // Track rendered nodes for debugging
+    this.lastRenderedNodes.clear();
+    renderableNodes.forEach(node => this.lastRenderedNodes.add(node.id));
+
     const occupiedLabels: Box[] = [];
     let placedFreeLabels = 0;
-    const freeLabelBudget = Math.max(4, Math.ceil(nodes.length * this.settings.labelDensity));
+    const freeLabelBudget = Math.max(4, Math.ceil(renderableNodes.length * this.settings.labelDensity));
 
     if (this.settings.formalMode) {
-      simplices.forEach(([key, simplex]) => {
+      renderableSimplices.forEach(([key, simplex]) => {
         const simplexDim = simplex.nodes.length - 1;
         if ((simplexDim === 1 && !this.settings.showEdges)
           || (simplexDim === 2 && !this.settings.showClusters)
@@ -570,23 +716,24 @@ export class Renderer {
         this.drawSuggestionOverlay(ctx, key, simplex);
       });
     } else {
-      simplices.forEach(([key, simplex]) => {
+      renderableSimplices.forEach(([key, simplex]) => {
         const simplexDim = simplex.nodes.length - 1;
         if ((simplexDim === 1 && !this.settings.showEdges)
           || (simplexDim === 2 && !this.settings.showClusters)
           || (simplexDim >= 3 && !this.settings.showCores)) {
           return;
         }
-        renderBlob(ctx, key, simplex, this.model, nodes, this.alphaForDimension(simplexDim, focusState.isActive), focusState);
+        renderBlob(ctx, key, simplex, this.model, allNodes, this.alphaForDimension(simplexDim, focusState.isActive), focusState);
         this.drawSuggestionOverlay(ctx, key, simplex);
       });
     }
 
     if (!this.settings.formalMode) {
-      renderEdges(ctx, simplices.map(([, simplex]) => simplex), this.model, this.model.nodes, this.settings.showEdges, focusState);
+      renderEdges(ctx, renderableSimplices.map(([, simplex]) => simplex), this.model, this.model.nodes, this.settings.showEdges, focusState);
     }
 
-    nodes.forEach((node) => {
+    // Only render progressively loaded visible nodes
+    renderableNodes.forEach((node) => {
       this.controller.lerpAlpha(node, focusState);
       const isHovered = node.id === focusState.hoveredNodeId;
       const isActive = !focusState.isActive || focusState.involvesNode(node.id);
@@ -622,26 +769,42 @@ export class Renderer {
       }
 
       ctx.font = `${isHovered ? "500" : "400"} 12px system-ui, sans-serif`;
-        const label = this.formatNodeLabel(node.id);
+      const label = this.formatNodeLabel(node.id);
       const freeBudgetAvailable = placedFreeLabels < freeLabelBudget;
-      const canPlace = this.canPlaceLabel(ctx, occupiedLabels, label, node.px, node.py - 13);
-      const forceLabel = isHovered || node.isPinned || focusState.isActive;
-      const shouldDrawLabel = forceLabel || (freeBudgetAvailable && canPlace);
+      const canPlace = this.canPlaceLabelFast(occupiedLabels, label, node.px, node.py - 13);
+      
+      // Determine if this label should be forced to show
+      // - Always show hovered, pinned nodes
+      // - Show on focus only for the focused node itself, not all connected nodes
+      const isFocusedNode = isHovered || (focusState.lockedNodeId === node.id);
+      const forceLabel = isFocusedNode || node.isPinned;
+      
+      // For non-forced labels, also consider if node is isolated (few connections)
+      // This improves visibility of standalone nodes
+      const nodeConnectivity = this.model.getSimplicesForNode(node.id).length;
+      const isIsolated = nodeConnectivity <= 1;
+      const shouldForceIsolated = isIsolated && focusState.isActive;
+      
+      const shouldDrawLabel = forceLabel || shouldForceIsolated || (freeBudgetAvailable && canPlace);
       if (!shouldDrawLabel) return;
-      if (!forceLabel) placedFreeLabels++;
-      const metrics = ctx.measureText(label);
-      const width = metrics.width + 12;
+      if (!forceLabel && !shouldForceIsolated) placedFreeLabels++;
+      
+      const width = this.measureTextWidth(ctx, label) + 12;
       const height = 18;
       const left = node.px - width / 2;
       const top = node.py - 27;
       occupiedLabels.push({ left, top, right: left + width, bottom: top + height });
-      ctx.fillStyle = this.isDark ? "rgba(7,10,18,0.55)" : "rgba(255,255,255,0.78)";
+      
+      // Reduce text background opacity significantly to allow links/fields to show through
+      // Dark: reduced from 0.55 to 0.28, Light: reduced from 0.78 to 0.42
+      ctx.fillStyle = this.isDark ? "rgba(7,10,18,0.28)" : "rgba(255,255,255,0.42)";
       ctx.beginPath();
       ctx.roundRect(left, top, width, height, 9);
       ctx.fill();
+      
       ctx.fillStyle = this.isDark
-        ? `rgba(255,255,255,${isActive ? 0.88 : 0.28})`
-        : `rgba(0,0,0,${isActive ? 0.72 : 0.24})`;
+        ? `rgba(255,255,255,${isActive ? 0.88 : 0.32})`
+        : `rgba(0,0,0,${isActive ? 0.72 : 0.28})`;
       ctx.textAlign = "center";
       ctx.fillText(label, node.px, node.py - 13);
     });
@@ -672,16 +835,7 @@ export class Renderer {
     x: number,
     y: number,
   ): boolean {
-    const width = ctx.measureText(text).width + 12;
-    const left = x - width / 2;
-    const top = y - 14;
-    const candidate = { left, top, right: left + width, bottom: top + 18 };
-    return !occupied.some((box) =>
-      candidate.left < box.right &&
-      candidate.right > box.left &&
-      candidate.top < box.bottom &&
-      candidate.bottom > box.top,
-    );
+    return this.canPlaceLabelFast(occupied, text, x, y);
   }
 
   getBounds(): Rect {

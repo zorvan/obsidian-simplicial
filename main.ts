@@ -234,6 +234,8 @@ export default class SimplicialPlugin extends Plugin {
         sparseEdgeLength: this.settings.sparseEdgeLength,
         sparseGravityBoost: this.settings.sparseGravityBoost,
         labelDensity: this.settings.labelDensity,
+        renderFilterMetric: this.settings.renderFilterMetric,
+        renderFilterThreshold: this.settings.renderFilterThreshold,
       },
       commandUi: {
         simplexSize: this.settings.commandSimplexSize,
@@ -813,6 +815,32 @@ class SimplicialSettingTab extends PluginSettingTab {
         .setDesc("Controls how many non-focused labels are allowed before decluttering hides the rest.");
       this.addNumberSlider(setting, this.plugin.settings.labelDensity, 0.1, 1, 0.05, async (value) => {
         this.plugin.settings.labelDensity = value;
+        await this.plugin.saveSettings();
+        this.plugin.renderer.render();
+      });
+    }
+
+    new Setting(containerEl)
+      .setName("Filtration metric")
+      .setDesc("Choose which simplex strength field the live filtration slider uses.")
+      .addDropdown((dropdown) => {
+        dropdown.addOption("weight", "Weight");
+        dropdown.addOption("confidence", "Confidence");
+        dropdown.addOption("decayed-weight", "Decayed weight");
+        dropdown.setValue(this.plugin.settings.renderFilterMetric);
+        dropdown.onChange(async (value) => {
+          this.plugin.settings.renderFilterMetric = value as PluginSettings["renderFilterMetric"];
+          await this.plugin.saveSettings();
+          this.plugin.renderer.render();
+        });
+      });
+
+    {
+      const setting = new Setting(containerEl)
+        .setName("Filtration threshold")
+        .setDesc("Hide simplices below this threshold in the active filtration metric.");
+      this.addNumberSlider(setting, this.plugin.settings.renderFilterThreshold, 0, 1, 0.01, async (value) => {
+        this.plugin.settings.renderFilterThreshold = value;
         await this.plugin.saveSettings();
         this.plugin.renderer.render();
       });

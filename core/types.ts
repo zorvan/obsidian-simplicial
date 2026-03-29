@@ -9,6 +9,7 @@ export const HOLD_REPULSION = 900;
 
 export const COLOR_PALETTE = ["purple", "teal", "coral", "pink", "blue", "amber"] as const;
 export type ColorKey = (typeof COLOR_PALETTE)[number] | "neutral";
+export type RenderFilterMetric = "weight" | "confidence" | "decayed-weight";
 
 export type SimplexSource =
   | 'user-defined'
@@ -32,6 +33,7 @@ export interface Simplex {
   dominantSignal?: string;
   confidence?: number;
   suggested?: boolean;
+  decayedWeight?: number;
 }
 
 export interface SimplicialComplex {
@@ -114,6 +116,8 @@ export interface PluginSettings {
   sparseEdgeLength: number;
   sparseGravityBoost: number;
   labelDensity: number;
+  renderFilterMetric: RenderFilterMetric;
+  renderFilterThreshold: number;
   pinnedNodes: PinnedState;
 }
 
@@ -163,4 +167,7 @@ export interface AnalysisSummary {
   averageDegree: number;
   maxDegreeNodeId: NodeID | null;
   maxDegree: number;
+  maxSimplexCentralityNodeId: NodeID | null;
+  maxSimplexCentrality: number;
+  averageSimplexCentrality: number;
 }

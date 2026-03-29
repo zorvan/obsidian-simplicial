@@ -198,11 +198,18 @@ export class SimplicialModel {
     const simplices = [...this.simplices.values()];
     const edgeSimplices = simplices.filter((simplex) => simplex.nodes.length === 2);
     const adjacency = new Map<NodeID, Set<NodeID>>();
+    const simplexCentrality = new Map<NodeID, number>();
     this.nodes.forEach((_, nodeId) => adjacency.set(nodeId, new Set()));
+    this.nodes.forEach((_, nodeId) => simplexCentrality.set(nodeId, 0));
     edgeSimplices.forEach((simplex) => {
       const [a, b] = simplex.nodes;
       adjacency.get(a)?.add(b);
       adjacency.get(b)?.add(a);
+    });
+    simplices.forEach((simplex) => {
+      simplex.nodes.forEach((nodeId) => {
+        simplexCentrality.set(nodeId, (simplexCentrality.get(nodeId) ?? 0) + 1);
+      });
     });
 
     let connectedComponents = 0;
@@ -233,6 +240,17 @@ export class SimplicialModel {
       }
     });
 
+    let maxSimplexCentralityNodeId: NodeID | null = null;
+    let maxSimplexCentrality = -1;
+    let simplexCentralityTotal = 0;
+    simplexCentrality.forEach((centrality, nodeId) => {
+      simplexCentralityTotal += centrality;
+      if (centrality > maxSimplexCentrality) {
+        maxSimplexCentrality = centrality;
+        maxSimplexCentralityNodeId = nodeId;
+      }
+    });
+
     return {
       nodeCount: this.nodes.size,
       simplexCount: simplices.length,
@@ -245,6 +263,9 @@ export class SimplicialModel {
       averageDegree: this.nodes.size ? Number((degreeTotal / this.nodes.size).toFixed(2)) : 0,
       maxDegreeNodeId,
       maxDegree: Math.max(0, maxDegree),
+      maxSimplexCentralityNodeId,
+      maxSimplexCentrality: Math.max(0, maxSimplexCentrality),
+      averageSimplexCentrality: this.nodes.size ? Number((simplexCentralityTotal / this.nodes.size).toFixed(2)) : 0,
     };
   }
 }

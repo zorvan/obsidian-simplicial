@@ -353,6 +353,94 @@ test("inferSimplices marks strong inferred relations as suggested with confidenc
   assert.ok((simplices[0].confidence ?? 0) >= 0.34);
 });
 
+test("inferSimplices emergent mode can emit density clusters", () => {
+  const now = Date.now();
+  const simplices = inferSimplices([
+    {
+      path: "d1.md",
+      folder: "Ideas",
+      topFolder: "Ideas",
+      titleTokens: new Set(["shared", "systems"]),
+      contentTokens: new Set(["network", "density"]),
+      tags: new Set(["cluster"]),
+      outgoingLinks: new Set(["d2.md", "d3.md", "d4.md"]),
+      role: "research",
+      modifiedAt: now,
+    },
+    {
+      path: "d2.md",
+      folder: "Ideas",
+      topFolder: "Ideas",
+      titleTokens: new Set(["shared", "patterns"]),
+      contentTokens: new Set(["network", "density"]),
+      tags: new Set(["cluster"]),
+      outgoingLinks: new Set(["d1.md", "d3.md", "d4.md"]),
+      role: "idea",
+      modifiedAt: now,
+    },
+    {
+      path: "d3.md",
+      folder: "Ideas",
+      topFolder: "Ideas",
+      titleTokens: new Set(["shared", "topology"]),
+      contentTokens: new Set(["network", "density"]),
+      tags: new Set(["cluster"]),
+      outgoingLinks: new Set(["d1.md", "d2.md", "d4.md"]),
+      role: "creative",
+      modifiedAt: now,
+    },
+    {
+      path: "d4.md",
+      folder: "Ideas",
+      topFolder: "Ideas",
+      titleTokens: new Set(["shared", "structure"]),
+      contentTokens: new Set(["network", "density"]),
+      tags: new Set(["cluster"]),
+      outgoingLinks: new Set(["d1.md", "d2.md", "d3.md"]),
+      role: "project",
+      modifiedAt: now,
+    },
+  ], {
+    inferenceMode: "emergent",
+    insightThreshold: 0.45,
+    linkStrengthThreshold: 0.4,
+    closureThreshold: 0.25,
+    tagRarityThreshold: 0.05,
+    decayHalfLifeDays: 90,
+    decayMinimumWeight: 0.1,
+    minDomainsForTriangle: 2,
+    minDomainsForTetra: 2,
+    minRolesForTetra: 2,
+    roleDiversityWeight: 0.2,
+    domainDiversityWeight: 0.25,
+    actionBonus: 0.3,
+    rareTagWeight: 0.15,
+    commonTagPenalty: 0.12,
+    linkGraphBaseline: false,
+    enableInferredEdges: true,
+    inferenceThreshold: 0.12,
+    enableLinkInference: true,
+    enableMutualLinkBonus: true,
+    enableSharedTags: true,
+    enableTitleOverlap: true,
+    enableContentOverlap: true,
+    enableSameFolderInference: true,
+    enableSameTopFolderInference: true,
+    linkWeight: 0.25,
+    mutualLinkBonus: 0.25,
+    sharedTagWeight: 0.08,
+    titleOverlapWeight: 0.18,
+    contentOverlapWeight: 0.16,
+    sameFolderWeight: 0.08,
+    sameTopFolderWeight: 0.04,
+    suggestionThreshold: 0.34,
+  });
+
+  const densityCluster = simplices.find((simplex: any) => simplex.label === "density cluster");
+  assert.ok(densityCluster);
+  assert.ok((densityCluster.decayedWeight ?? 0) > 0);
+});
+
 test("model analysis summary reports graph-level metrics", () => {
   const model = new SimplicialModel();
   model.addSimplex({ nodes: ["a.md", "b.md"], userDefined: true });
@@ -367,4 +455,7 @@ test("model analysis summary reports graph-level metrics", () => {
   assert.equal(summary.connectedComponents, 1);
   assert.ok(["a.md", "b.md", "c.md"].includes(summary.maxDegreeNodeId));
   assert.ok(summary.maxDegree >= 2);
+  assert.ok(["a.md", "b.md", "c.md"].includes(summary.maxSimplexCentralityNodeId));
+  assert.equal(summary.maxSimplexCentrality, 3);
+  assert.ok(summary.averageSimplexCentrality > 0);
 });

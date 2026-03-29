@@ -5,17 +5,147 @@ function pairKey(a: string, b: string): string {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
+// Barnes-Hut Quad-Tree for O(n log n) force calculations
+class QuadTreeNode {
+  public mass: number = 0;
+  public cx: number = 0;
+  public cy: number = 0;
+  public children: (QuadTreeNode | null)[] = [null, null, null, null];
+  public node: LayoutNode | null = null;
+
+  constructor(
+    public x: number,
+    public y: number,
+    public width: number,
+    public height: number
+  ) {}
+
+  insert(node: LayoutNode): void {
+    if (this.node === null && this.children[0] === null) {
+      // Leaf node, store the node
+      this.node = node;
+      this.mass = 1;
+      this.cx = node.px;
+      this.cy = node.py;
+      return;
+    }
+
+    if (this.node !== null) {
+      // Split this node and reinsert both nodes
+      this.subdivide();
+      const oldNode = this.node;
+      this.node = null;
+      this.insertIntoChildren(oldNode);
+      this.insertIntoChildren(node);
+    } else {
+      // Insert into appropriate child
+      this.insertIntoChildren(node);
+    }
+
+    // Update center of mass
+    this.updateCenterOfMass();
+  }
+
+  private subdivide(): void {
+    const halfWidth = this.width / 2;
+    const halfHeight = this.height / 2;
+
+    this.children[0] = new QuadTreeNode(this.x, this.y, halfWidth, halfHeight); // NW
+    this.children[1] = new QuadTreeNode(this.x + halfWidth, this.y, halfWidth, halfHeight); // NE
+    this.children[2] = new QuadTreeNode(this.x, this.y + halfHeight, halfWidth, halfHeight); // SW
+    this.children[3] = new QuadTreeNode(this.x + halfWidth, this.y + halfHeight, halfWidth, halfHeight); // SE
+  }
+
+  private insertIntoChildren(node: LayoutNode): void {
+    const halfWidth = this.width / 2;
+    const halfHeight = this.height / 2;
+
+    if (node.px < this.x + halfWidth) {
+      if (node.py < this.y + halfHeight) {
+        this.children[0]!.insert(node); // NW
+      } else {
+        this.children[2]!.insert(node); // SW
+      }
+    } else {
+      if (node.py < this.y + halfHeight) {
+        this.children[1]!.insert(node); // NE
+      } else {
+        this.children[3]!.insert(node); // SE
+      }
+    }
+  }
+
+  private updateCenterOfMass(): void {
+    let totalMass = 0;
+    let totalX = 0;
+    let totalY = 0;
+
+    // Sum masses from children
+    for (const child of this.children) {
+      if (child) {
+        totalMass += child.mass;
+        totalX += child.cx * child.mass;
+        totalY += child.cy * child.mass;
+      }
+    }
+
+    this.mass = totalMass;
+    if (totalMass > 0) {
+      this.cx = totalX / totalMass;
+      this.cy = totalY / totalMass;
+    }
+  }
+
+  calculateForce(node: LayoutNode, theta: number, repulsion: number): { fx: number; fy: number } {
+    if (this.mass === 0) return { fx: 0, fy: 0 };
+
+    const dx = node.px - this.cx;
+    const dy = node.py - this.cy;
+    const distance = Math.hypot(dx, dy) || 1;
+    const d2 = distance * distance + 1;
+
+    if (this.node === node && this.children[0] === null) {
+      return { fx: 0, fy: 0 };
+    }
+
+    // Barnes-Hut criterion: if width/distance < theta, treat as single body
+    if (this.width / distance < theta || this.node !== null) {
+      // Calculate repulsion force
+      const f = (repulsion * this.mass) / d2;
+      return {
+        fx: f * dx / distance,
+        fy: f * dy / distance
+      };
+    } else {
+      // Recurse into children
+      let fx = 0;
+      let fy = 0;
+      for (const child of this.children) {
+        if (child) {
+          const childForce = child.calculateForce(node, theta, repulsion);
+          fx += childForce.fx;
+          fy += childForce.fy;
+        }
+      }
+      return { fx, fy };
+    }
+  }
+}
+
 export class LayoutEngine {
   private MIN_NODE_SEPARATION = 72;
-  private REPULSION = 2400;
+  private REPULSION = 1800; // reduced for smoother motion with BH
   private COHESION = 0.005;
   private GRAVITY = 0.0007;
-  private NOISE = 0.12;
-  private DAMPING = 0.84;
-  private SLEEP_THRESHOLD = 0.01;
+  private NOISE = 0.06; // reduce random jitter
+  private DAMPING = 0.9; // higher damping for quicker stabilization
+  private SLEEP_THRESHOLD = 0.02;
   private BOUNDARY_PADDING = 50;
   private SPARSE_EDGE_LENGTH = 150;
   private SPARSE_GRAVITY_BOOST = 1.8;
+  private BARNES_HUT_THETA = 0.65; // more approximation for stability
+  private MAX_VELOCITY = 30;
+  private USE_BARNES_HUT = true;
   private isAsleep = false;
   private animFrame: number | null = null;
   private renderFn: (() => void) | null = null;
@@ -94,6 +224,20 @@ export class LayoutEngine {
       }
     });
 
+    // Build Barnes-Hut quad-tree for O(n log n) repulsion calculations
+    const quadBounds = nodes.length > 0 ? this.calculateBounds(nodes) : { x: 0, y: 0, width: 1000, height: 1000 };
+    const quadTree = new QuadTreeNode(quadBounds.x, quadBounds.y, quadBounds.width, quadBounds.height);
+    nodes.forEach(node => quadTree.insert(node));
+
+    // Calculate repulsion forces using Barnes-Hut approximation
+    nodes.forEach(node => {
+      if (node.isPinned) return;
+      const force = quadTree.calculateForce(node, this.BARNES_HUT_THETA, this.REPULSION);
+      node.vx += force.fx;
+      node.vy += force.fy;
+    });
+
+    // Calculate connection-based forces (springs, cohesion) - still O(E) complexity
     for (let i = 0; i < nodes.length; i++) {
       for (let j = i + 1; j < nodes.length; j++) {
         const a = nodes[i];
@@ -101,22 +245,12 @@ export class LayoutEngine {
         const dx = b.px - a.px;
         const dy = b.py - a.py;
         const distance = Math.hypot(dx, dy) || 1;
-        const d2 = distance * distance + 1;
         const connectionStrength = connectionStrengths.get(pairKey(a.id, b.id)) ?? 0;
-        const f = this.REPULSION / d2;
-        if (!a.isPinned) {
-          a.vx -= f * dx;
-          a.vy -= f * dy;
-        }
-        if (!b.isPinned) {
-          b.vx += f * dx;
-          b.vy += f * dy;
-        }
 
         const ux = dx / distance;
         const uy = dy / distance;
         const overlap = Math.max(0, this.MIN_NODE_SEPARATION - distance);
-        if (overlap > 0) {
+        if (overlap > 0 && !this.USE_BARNES_HUT) {
           const nodeSeparationForce = overlap * this.COHESION * 0.55;
           if (!a.isPinned) {
             a.vx -= nodeSeparationForce * ux;
@@ -144,20 +278,6 @@ export class LayoutEngine {
           if (!b.isPinned) {
             b.vx -= springForce * ux - separationForce * ux;
             b.vy -= springForce * uy - separationForce * uy;
-          }
-        } else {
-          const exclusionRadius = Math.max(this.SPARSE_EDGE_LENGTH * 1.2, this.MIN_NODE_SEPARATION * 1.8);
-          if (distance < exclusionRadius) {
-            const repelRatio = (exclusionRadius - distance) / exclusionRadius;
-            const separationForce = this.REPULSION * 0.012 * repelRatio * repelRatio;
-            if (!a.isPinned) {
-              a.vx -= separationForce * ux;
-              a.vy -= separationForce * uy;
-            }
-            if (!b.isPinned) {
-              b.vx += separationForce * ux;
-              b.vy += separationForce * uy;
-            }
           }
         }
       }
@@ -202,15 +322,55 @@ export class LayoutEngine {
       const gravity = sparseGraph ? this.GRAVITY * this.SPARSE_GRAVITY_BOOST : this.GRAVITY;
       node.vx += (0 - node.px) * gravity + (centroid.x - node.px) * gravity * 0.12 + (Math.random() - 0.5) * this.NOISE;
       node.vy += (0 - node.py) * gravity + (centroid.y - node.py) * gravity * 0.12 + (Math.random() - 0.5) * this.NOISE;
+
       node.vx *= this.DAMPING;
       node.vy *= this.DAMPING;
+
+      // clamp velocity for stability
+      const speed = Math.hypot(node.vx, node.vy);
+      if (speed > this.MAX_VELOCITY) {
+        const factor = this.MAX_VELOCITY / speed;
+        node.vx *= factor;
+        node.vy *= factor;
+      }
+
       node.px += node.vx;
       node.py += node.vy;
     });
 
     const kineticEnergy = nodes.reduce((sum, node) => sum + node.vx * node.vx + node.vy * node.vy, 0);
-    if (kineticEnergy < this.SLEEP_THRESHOLD) {
+    const averageKineticEnergy = nodes.length > 0 ? kineticEnergy / nodes.length : 0;
+    if (averageKineticEnergy < this.SLEEP_THRESHOLD) {
       this.isAsleep = true;
     }
+  }
+
+  private calculateBounds(nodes: LayoutNode[]): { x: number; y: number; width: number; height: number } {
+    if (nodes.length === 0) {
+      return { x: -500, y: -500, width: 1000, height: 1000 };
+    }
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    nodes.forEach(node => {
+      minX = Math.min(minX, node.px);
+      minY = Math.min(minY, node.py);
+      maxX = Math.max(maxX, node.px);
+      maxY = Math.max(maxY, node.py);
+    });
+
+    const padding = 100;
+    const width = Math.max(maxX - minX + 2 * padding, 1000);
+    const height = Math.max(maxY - minY + 2 * padding, 1000);
+
+    return {
+      x: minX - padding,
+      y: minY - padding,
+      width,
+      height
+    };
   }
 }
