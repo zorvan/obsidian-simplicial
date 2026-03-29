@@ -238,6 +238,82 @@ test("inferSimplices can emit a soft cluster from three mutually strong relation
   assert.ok(softCluster);
 });
 
+test("inferSimplices emergent open triad detection yields a 3-simplex", () => {
+  const now = Date.now();
+  const simplices = inferSimplices([
+    {
+      path: "a.md",
+      folder: "A",
+      topFolder: "A",
+      titleTokens: new Set(["alpha"]),
+      contentTokens: new Set(["shift"]),
+      tags: new Set(["research"]),
+      outgoingLinks: new Set(["b.md"]),
+      role: "research",
+      modifiedAt: now,
+    },
+    {
+      path: "b.md",
+      folder: "B",
+      topFolder: "B",
+      titleTokens: new Set(["beta"]),
+      contentTokens: new Set(["bridge"]),
+      tags: new Set(["project"]),
+      outgoingLinks: new Set(["a.md", "c.md"]),
+      role: "project",
+      modifiedAt: now,
+    },
+    {
+      path: "c.md",
+      folder: "C",
+      topFolder: "C",
+      titleTokens: new Set(["gamma"]),
+      contentTokens: new Set(["creative"]),
+      tags: new Set(["creative"]),
+      outgoingLinks: new Set(["b.md"]),
+      role: "creative",
+      modifiedAt: now,
+    },
+  ], {
+    inferenceMode: "emergent",
+    insightThreshold: 0.45,
+    linkStrengthThreshold: 0.4,
+    closureThreshold: 0.25,
+    tagRarityThreshold: 0.05,
+    decayHalfLifeDays: 90,
+    decayMinimumWeight: 0.1,
+    minDomainsForTriangle: 2,
+    minDomainsForTetra: 2,
+    minRolesForTetra: 2,
+    roleDiversityWeight: 0.2,
+    domainDiversityWeight: 0.25,
+    actionBonus: 0.3,
+    rareTagWeight: 0.15,
+    commonTagPenalty: 0.12,
+    linkGraphBaseline: false,
+    enableInferredEdges: true,
+    inferenceThreshold: 0.12,
+    enableLinkInference: true,
+    enableMutualLinkBonus: true,
+    enableSharedTags: true,
+    enableTitleOverlap: true,
+    enableContentOverlap: true,
+    enableSameFolderInference: false,
+    enableSameTopFolderInference: false,
+    linkWeight: 0.25,
+    mutualLinkBonus: 0.25,
+    sharedTagWeight: 0.08,
+    titleOverlapWeight: 0.18,
+    contentOverlapWeight: 0.16,
+    sameFolderWeight: 0.08,
+    sameTopFolderWeight: 0.04,
+    suggestionThreshold: 0.34,
+  });
+
+  const triad = simplices.find((simplex: any) => simplex.nodes.length === 3 && simplex.source === 'inferred-bridge');
+  assert.ok(triad);
+});
+
 test("inferSimplices marks strong inferred relations as suggested with confidence", () => {
   const simplices = inferSimplices([
     {

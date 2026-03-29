@@ -1,0 +1,35 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.detectOpenTriads = detectOpenTriads;
+const graph_1 = require("../graph");
+function detectOpenTriads(graph, config) {
+    const candidates = [];
+    const nodes = [...graph.nodes.keys()];
+    const LINK_THRESHOLD = config.linkStrengthThreshold;
+    const CLOSURE_THRESHOLD = config.closureThreshold;
+    for (const b of nodes) {
+        const bNeighbors = (0, graph_1.getNeighborsAbove)(b, LINK_THRESHOLD, graph);
+        for (let i = 0; i < bNeighbors.length; i++) {
+            for (let j = i + 1; j < bNeighbors.length; j++) {
+                const a = bNeighbors[i];
+                const c = bNeighbors[j];
+                const acStrength = (0, graph_1.getEdgeStrength)(a, c, graph);
+                if (acStrength >= CLOSURE_THRESHOLD)
+                    continue;
+                const abStrength = (0, graph_1.getEdgeStrength)(a, b, graph);
+                const bcStrength = (0, graph_1.getEdgeStrength)(b, c, graph);
+                const triadScore = abStrength + bcStrength - acStrength * 2;
+                const weight = Math.min(0.9, Math.max(0.3, triadScore / 2));
+                candidates.push({
+                    nodes: [a, b, c],
+                    source: 'inferred-bridge',
+                    bridgeNode: b,
+                    triadScore,
+                    label: null,
+                    weight,
+                });
+            }
+        }
+    }
+    return candidates;
+}

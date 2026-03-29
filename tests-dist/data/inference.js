@@ -1,8 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildInferenceContext = buildInferenceContext;
+exports.inferSimplicesLegacy = inferSimplicesLegacy;
 exports.inferSimplices = inferSimplices;
 const logger_1 = require("../core/logger");
+const engine_1 = require("./inference/engine");
+const roles_1 = require("./inference/roles");
 const STOPWORDS = new Set([
     "the", "a", "an", "and", "or", "but", "for", "with", "from", "into", "onto", "in", "on", "at", "to", "of",
     "is", "are", "was", "were", "be", "been", "being", "this", "that", "these", "those", "it", "its", "as", "by",
@@ -80,9 +83,11 @@ function buildInferenceContext(app, file, content) {
         contentTokens: tokenize(body),
         tags: extractTags(cache),
         outgoingLinks: resolveLinks(file, cache, app),
+        role: (0, roles_1.extractRole)(file, cache, content),
+        modifiedAt: file.stat?.mtime ?? Date.now(),
     };
 }
-function inferSimplices(contexts, settings) {
+function inferSimplicesLegacy(contexts, settings) {
     if (!settings.enableInferredEdges && !settings.linkGraphBaseline) {
         logger_1.logger.info("inference", "Inferred simplices disabled by settings");
         return [];
@@ -207,4 +212,15 @@ function inferSimplices(contexts, settings) {
         inferredSimplexCount: simplices.length
     });
     return simplices;
+}
+function inferSimplices(contexts, settings) {
+    const mode = settings.inferenceMode ?? 'taxonomic';
+    const results = [];
+    if (mode === 'taxonomic' || mode === 'hybrid') {
+        results.push(...inferSimplicesLegacy(contexts, settings));
+    }
+    if (mode === 'emergent' || mode === 'hybrid') {
+        results.push(...(0, engine_1.inferSimplicesEmergentWithMode)(contexts, settings));
+    }
+    return results;
 }

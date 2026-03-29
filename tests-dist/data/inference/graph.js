@@ -1,0 +1,89 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.normalizeKeyPair = normalizeKeyPair;
+exports.computeEdgeStrength = computeEdgeStrength;
+exports.buildRawGraph = buildRawGraph;
+exports.getEdgeStrength = getEdgeStrength;
+exports.getNeighborsAbove = getNeighborsAbove;
+function normalizeKeyPair(a, b) {
+    return [a, b].sort().join("|");
+}
+function sharedTags(a, b) {
+    const set = new Set(a);
+    return b.filter((tag) => set.has(tag));
+}
+function computeEdgeStrength(a, b, contexts, config) {
+    let strength = 0;
+    const ctxA = contexts.get(a.id);
+    const ctxB = contexts.get(b.id);
+    const aLinksB = ctxA?.outgoingLinks.has(b.id) ?? false;
+    const bLinksA = ctxB?.outgoingLinks.has(a.id) ?? false;
+    if (aLinksB && bLinksA)
+        strength += 0.8;
+    else if (aLinksB || bLinksA)
+        strength += 0.5;
+    const shared = sharedTags(a.tags, b.tags);
+    const allTags = [...contexts.values()].flatMap((c) => [...c.tags]);
+    const tagCounts = new Map();
+    for (const tag of allTags)
+        tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
+    const totalNotes = contexts.size;
+    const rare = new Set();
+    const common = new Set();
+    for (const [tag, count] of tagCounts.entries()) {
+        if (count / totalNotes < config.tagRarityThreshold)
+            rare.add(tag);
+        else
+            common.add(tag);
+    }
+    const sharedRare = shared.filter((tag) => rare.has(tag));
+    const sharedCommon = shared.filter((tag) => common.has(tag));
+    strength += sharedRare.length * 0.15;
+    strength -= sharedCommon.length * 0.10;
+    if (a.domain === b.domain) {
+        strength -= 0.15;
+    }
+    return Math.max(0, Math.min(1, strength));
+}
+function buildRawGraph(contexts, config) {
+    const nodes = new Map();
+    const ctxMap = new Map(contexts.map((c) => [c.path, c]));
+    for (const ctx of contexts) {
+        nodes.set(ctx.path, {
+            id: ctx.path,
+            role: ctx.role,
+            domain: ctx.topFolder || ctx.folder || "",
+            tags: [...ctx.tags],
+            modifiedAt: ctx.modifiedAt,
+            linkCount: ctx.outgoingLinks.size,
+        });
+    }
+    const edges = new Map();
+    const nodeArr = [...nodes.values()];
+    for (let i = 0; i < nodeArr.length; i++) {
+        for (let j = i + 1; j < nodeArr.length; j++) {
+            const a = nodeArr[i];
+            const b = nodeArr[j];
+            const strength = computeEdgeStrength(a, b, ctxMap, config);
+            const key = normalizeKeyPair(a.id, b.id);
+            edges.set(key, { a: a.id, b: b.id, strength });
+        }
+    }
+    return { nodes, edges };
+}
+function getEdgeStrength(aId, bId, graph) {
+    const key = normalizeKeyPair(aId, bId);
+    return graph.edges.get(key)?.strength ?? 0;
+}
+function getNeighborsAbove(id, threshold, graph) {
+    const result = [];
+    for (const edge of graph.edges.values()) {
+        if (edge.strength < threshold)
+            continue;
+        if (edge.a === id)
+            result.push(edge.b);
+        else if (edge.b === id)
+            result.push(edge.a);
+    }
+    return result;
+}

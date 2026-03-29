@@ -1,6 +1,10 @@
 import type { App, CachedMetadata, TFile } from "obsidian";
 import type { PluginSettings, Simplex } from "../core/types";
 import { logger } from "../core/logger";
+import { inferSimplicesEmergentWithMode } from "./inference/engine";
+import { extractRole } from "./inference/roles";
+import type { InferenceContext } from "./inference/types";
+export type { InferenceContext } from "./inference/types";
 
 const STOPWORDS = new Set([
   "the", "a", "an", "and", "or", "but", "for", "with", "from", "into", "onto", "in", "on", "at", "to", "of",
@@ -9,15 +13,6 @@ const STOPWORDS = new Set([
   "note", "notes", "todo", "idea"
 ]);
 
-export interface InferenceContext {
-  path: string;
-  folder: string;
-  topFolder: string;
-  titleTokens: Set<string>;
-  contentTokens: Set<string>;
-  tags: Set<string>;
-  outgoingLinks: Set<string>;
-}
 
 function tokenize(value: string): Set<string> {
   return new Set(
@@ -91,10 +86,12 @@ export function buildInferenceContext(app: App, file: TFile, content: string): I
     contentTokens: tokenize(body),
     tags: extractTags(cache),
     outgoingLinks: resolveLinks(file, cache, app),
+    role: extractRole(file, cache, content),
+    modifiedAt: file.stat?.mtime ?? Date.now(),
   };
 }
 
-export function inferSimplices(contexts: InferenceContext[], settings: Pick<
+export function inferSimplicesLegacy(contexts: InferenceContext[], settings: Pick<
   PluginSettings,
   | "linkGraphBaseline"
   | "enableInferredEdges"
@@ -244,4 +241,19 @@ export function inferSimplices(contexts: InferenceContext[], settings: Pick<
     inferredSimplexCount: simplices.length
   });
   return simplices;
+}
+
+export function inferSimplices(contexts: InferenceContext[], settings: PluginSettings): Simplex[] {
+  const mode = settings.inferenceMode ?? 'taxonomic';
+  const results: Simplex[] = [];
+
+  if (mode === 'taxonomic' || mode === 'hybrid') {
+    results.push(...inferSimplicesLegacy(contexts, settings));
+  }
+
+  if (mode === 'emergent' || mode === 'hybrid') {
+    results.push(...inferSimplicesEmergentWithMode(contexts, settings));
+  }
+
+  return results;
 }
