@@ -5,6 +5,15 @@ function pairKey(a: string, b: string): string {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
+function hashToUnitInterval(value: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) / 0xffffffff;
+}
+
 // Barnes-Hut Quad-Tree for O(n log n) force calculations
 class QuadTreeNode {
   public mass: number = 0;
@@ -209,12 +218,25 @@ export class LayoutEngine {
       && simplices.every((simplex) => simplex.nodes.length <= 2 || simplex.inferred);
     const nodeById = new Map(nodes.map((node) => [node.id, node]));
     const connectionStrengths = new Map<string, number>();
+    const nodeConnectivity = new Map<string, { edgeCount: number; clusterCount: number; maxDim: number }>();
+
+    nodes.forEach((node) => {
+      nodeConnectivity.set(node.id, { edgeCount: 0, clusterCount: 0, maxDim: 0 });
+    });
 
     simplices.forEach((simplex) => {
+      const simplexDim = simplex.nodes.length - 1;
       const simplexWeight = simplex.weight ?? 1;
       const pairBoost = simplex.nodes.length === 2
         ? 1
         : 1 + Math.min(1.2, (simplex.nodes.length - 2) * 0.4);
+      simplex.nodes.forEach((nodeId) => {
+        const stats = nodeConnectivity.get(nodeId);
+        if (!stats) return;
+        if (simplex.nodes.length === 2) stats.edgeCount++;
+        if (simplex.nodes.length >= 3) stats.clusterCount++;
+        stats.maxDim = Math.max(stats.maxDim, simplexDim);
+      });
       for (let i = 0; i < simplex.nodes.length; i++) {
         for (let j = i + 1; j < simplex.nodes.length; j++) {
           const key = pairKey(simplex.nodes[i], simplex.nodes[j]);
@@ -319,9 +341,26 @@ export class LayoutEngine {
       : { x: 0, y: 0 };
     nodes.forEach((node) => {
       if (node.isPinned) return;
+      const stats = nodeConnectivity.get(node.id) ?? { edgeCount: 0, clusterCount: 0, maxDim: 0 };
       const gravity = sparseGraph ? this.GRAVITY * this.SPARSE_GRAVITY_BOOST : this.GRAVITY;
-      node.vx += (0 - node.px) * gravity + (centroid.x - node.px) * gravity * 0.12 + (Math.random() - 0.5) * this.NOISE;
-      node.vy += (0 - node.py) * gravity + (centroid.y - node.py) * gravity * 0.12 + (Math.random() - 0.5) * this.NOISE;
+      const structuralWeight = stats.clusterCount > 0 ? 1.2 : stats.edgeCount > 0 ? 0.7 : 0.08;
+      const centroidPull = stats.clusterCount > 0 ? 0.14 : stats.edgeCount > 0 ? 0.08 : 0.01;
+
+      node.vx += (0 - node.px) * gravity * structuralWeight
+        + (centroid.x - node.px) * gravity * centroidPull
+        + (Math.random() - 0.5) * this.NOISE;
+      node.vy += (0 - node.py) * gravity * structuralWeight
+        + (centroid.y - node.py) * gravity * centroidPull
+        + (Math.random() - 0.5) * this.NOISE;
+
+      if (stats.edgeCount === 0 && stats.clusterCount === 0) {
+        const angle = hashToUnitInterval(node.id) * Math.PI * 2;
+        const targetRadius = Math.max(this.SPARSE_EDGE_LENGTH * 2.8, 320);
+        const targetX = Math.cos(angle) * targetRadius;
+        const targetY = Math.sin(angle) * targetRadius;
+        node.vx += (targetX - node.px) * gravity * 0.22;
+        node.vy += (targetY - node.py) * gravity * 0.22;
+      }
 
       node.vx *= this.DAMPING;
       node.vy *= this.DAMPING;

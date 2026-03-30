@@ -7,11 +7,16 @@ import { buildInferenceContext, inferSimplices, type InferenceContext } from "./
 import { parseSimplices } from "./parser";
 
 export class VaultIndex {
+  private readonly fullScanChunkSize = 24;
+  private readonly inferenceRebuildDelayMs = 40;
   private lastWrittenHash = new Map<string, number>();
   private fileSimplexKeys = new Map<string, Set<string>>();
   private inferenceContexts = new Map<string, InferenceContext>();
   private lastInferredSnapshot = "";
   private debouncedChange: (file: TFile) => void;
+  private inferenceRebuildTimer: number | null = null;
+  private inferenceRebuildPromise: Promise<void> | null = null;
+  private resolveInferenceRebuild: (() => void) | null = null;
 
   constructor(
     private app: App,
@@ -49,11 +54,21 @@ export class VaultIndex {
     logger.info("vault-index", "Starting full vault scan", {
       fileCount: files.length
     });
+
+    let chunk: Array<{ file: TFile; content: string }> = [];
     for (const file of files) {
       const content = await this.app.vault.read(file);
-      this.processFile(file, content);
+      chunk.push({ file, content });
+      if (chunk.length >= this.fullScanChunkSize) {
+        this.flushFullScanChunk(chunk);
+        chunk = [];
+        await this.yieldToBrowser();
+      }
     }
-    this.rebuildInferredSimplices();
+    if (chunk.length > 0) {
+      this.flushFullScanChunk(chunk);
+    }
+    await this.scheduleInferenceRebuild(0);
     logger.info("vault-index", "Completed full vault scan", {
       fileCount: files.length,
       indexedNodeCount: this.model.nodes.size,
@@ -77,7 +92,7 @@ export class VaultIndex {
       hash: currentHash
     });
     this.processFile(file, content);
-    this.rebuildInferredSimplices();
+    await this.scheduleInferenceRebuild();
     this.onExternalChange?.();
   }
 
@@ -87,8 +102,7 @@ export class VaultIndex {
     this.inferenceContexts.delete(file.path);
     this.model.removeNode(file.path);
     this.model.replaceSourceSimplices(file.path, []);
-    this.rebuildInferredSimplices();
-    this.onExternalChange?.();
+    void this.scheduleInferenceRebuild().then(() => this.onExternalChange?.());
   }
 
   private onFileRename(file: TFile, oldPath: string): void {
@@ -107,8 +121,7 @@ export class VaultIndex {
       this.inferenceContexts.set(file.path, { ...context, path: file.path });
       this.inferenceContexts.delete(oldPath);
     }
-    this.rebuildInferredSimplices();
-    this.onExternalChange?.();
+    void this.scheduleInferenceRebuild().then(() => this.onExternalChange?.());
   }
 
   private processFile(file: TFile, content: string): void {
@@ -126,8 +139,45 @@ export class VaultIndex {
     });
   }
 
+  private flushFullScanChunk(chunk: Array<{ file: TFile; content: string }>): void {
+    this.model.batch(() => {
+      chunk.forEach(({ file, content }) => {
+        this.processFile(file, content);
+      });
+    });
+  }
+
+  private async yieldToBrowser(): Promise<void> {
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+  }
+
+  private scheduleInferenceRebuild(delayMs = this.inferenceRebuildDelayMs): Promise<void> {
+    if (this.inferenceRebuildPromise === null) {
+      this.inferenceRebuildPromise = new Promise<void>((resolve) => {
+        this.resolveInferenceRebuild = resolve;
+      });
+    }
+    if (this.inferenceRebuildTimer !== null) {
+      window.clearTimeout(this.inferenceRebuildTimer);
+    }
+    this.inferenceRebuildTimer = window.setTimeout(() => {
+      this.inferenceRebuildTimer = null;
+      try {
+        this.rebuildInferredSimplices();
+      } finally {
+        const resolve = this.resolveInferenceRebuild;
+        this.resolveInferenceRebuild = null;
+        this.inferenceRebuildPromise = null;
+        resolve?.();
+      }
+    }, delayMs);
+    return this.inferenceRebuildPromise;
+  }
+
   private rebuildInferredSimplices(): void {
+    console.time('rebuildInferredSimplices-total');
     const inferred = inferSimplices([...this.inferenceContexts.values()], this.settings);
+    console.timeEnd('rebuildInferredSimplices-total');
     this.model.replaceInferredSimplices(inferred);
     const snapshot = JSON.stringify({
       inferredSimplexCount: inferred.length,
@@ -142,6 +192,10 @@ export class VaultIndex {
   }
 
   destroy(): void {
+    if (this.inferenceRebuildTimer !== null) {
+      window.clearTimeout(this.inferenceRebuildTimer);
+      this.inferenceRebuildTimer = null;
+    }
     // Obsidian handles event cleanup via plugin registration scope.
   }
 }

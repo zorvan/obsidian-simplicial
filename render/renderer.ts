@@ -133,6 +133,14 @@ export class Renderer {
     return this.simplexStrength(simplex, this.settings.renderFilterMetric) >= this.settings.renderFilterThreshold;
   }
 
+  private nodeVisualPriority(node: LayoutNode): { bucket: number; simplexCount: number } {
+    const simplices = this.model.getSimplicesForNode(node.id);
+    const hasCluster = simplices.some((simplex) => simplex.nodes.length >= 3);
+    const hasEdge = simplices.some((simplex) => simplex.nodes.length === 2);
+    const bucket = hasCluster ? 3 : hasEdge ? 2 : simplices.length > 0 ? 1 : 0;
+    return { bucket, simplexCount: simplices.length };
+  }
+
   private progressiveNodeKey(nodes: LayoutNode[]): string {
     const hovered = this.controller.hoveredNodeId ?? "";
     const locked = this.controller.lockedNodeId ?? "";
@@ -155,8 +163,22 @@ export class Renderer {
     const locked = this.controller.lockedNodeId;
 
     return [...nodes].sort((a, b) => {
-      const aPriority = (a.id === hovered ? 6 : 0) + (a.id === locked ? 5 : 0) + (focusNodeIds.has(a.id) ? 4 : 0) + (a.isPinned ? 2 : 0);
-      const bPriority = (b.id === hovered ? 6 : 0) + (b.id === locked ? 5 : 0) + (focusNodeIds.has(b.id) ? 4 : 0) + (b.isPinned ? 2 : 0);
+      const aVisual = this.nodeVisualPriority(a);
+      const bVisual = this.nodeVisualPriority(b);
+      const aNetworkPriority = aVisual.bucket * 10 + Math.min(4, aVisual.simplexCount);
+      const bNetworkPriority = bVisual.bucket * 10 + Math.min(4, bVisual.simplexCount);
+
+      const aPriority = (a.id === hovered ? 6 : 0)
+        + (a.id === locked ? 5 : 0)
+        + (focusNodeIds.has(a.id) ? 4 : 0)
+        + (a.isPinned ? 2 : 0)
+        + aNetworkPriority;
+      const bPriority = (b.id === hovered ? 6 : 0)
+        + (b.id === locked ? 5 : 0)
+        + (focusNodeIds.has(b.id) ? 4 : 0)
+        + (b.isPinned ? 2 : 0)
+        + bNetworkPriority;
+
       if (aPriority !== bPriority) return bPriority - aPriority;
 
       const aDist = (a.px - centerX) ** 2 + (a.py - centerY) ** 2;
@@ -190,8 +212,22 @@ export class Renderer {
       .sort((a, b) => {
         const [keyA, simplexA] = a;
         const [keyB, simplexB] = b;
-        const scoreA = (focusSimplexKeys.has(keyA) ? 6 : 0) + (simplexA.suggested ? 2 : 0) + this.simplexStrength(simplexA, this.settings.renderFilterMetric) + simplexA.nodes.length * 0.05;
-        const scoreB = (focusSimplexKeys.has(keyB) ? 6 : 0) + (simplexB.suggested ? 2 : 0) + this.simplexStrength(simplexB, this.settings.renderFilterMetric) + simplexB.nodes.length * 0.05;
+
+        const dimPriorityA = simplexA.nodes.length >= 3 ? 20 : simplexA.nodes.length === 2 ? 10 : 0;
+        const dimPriorityB = simplexB.nodes.length >= 3 ? 20 : simplexB.nodes.length === 2 ? 10 : 0;
+
+        const scoreA = (focusSimplexKeys.has(keyA) ? 6 : 0)
+          + (simplexA.suggested ? 2 : 0)
+          + this.simplexStrength(simplexA, this.settings.renderFilterMetric)
+          + simplexA.nodes.length * 0.05
+          + dimPriorityA;
+
+        const scoreB = (focusSimplexKeys.has(keyB) ? 6 : 0)
+          + (simplexB.suggested ? 2 : 0)
+          + this.simplexStrength(simplexB, this.settings.renderFilterMetric)
+          + simplexB.nodes.length * 0.05
+          + dimPriorityB;
+
         return scoreB - scoreA;
       });
 
@@ -464,11 +500,13 @@ export class Renderer {
       return;
     }
 
+    const connectedNodes = nodes.filter((node) => this.nodeVisualPriority(node).bucket >= 2);
+    const fitNodes = connectedNodes.length > 0 ? connectedNodes : nodes;
     const pad = this.MIN_NODE_RADIUS;
-    const minX = Math.min(...nodes.map((node) => node.px)) - pad;
-    const maxX = Math.max(...nodes.map((node) => node.px)) + pad;
-    const minY = Math.min(...nodes.map((node) => node.py)) - pad;
-    const maxY = Math.max(...nodes.map((node) => node.py)) + pad;
+    const minX = Math.min(...fitNodes.map((node) => node.px)) - pad;
+    const maxX = Math.max(...fitNodes.map((node) => node.px)) + pad;
+    const minY = Math.min(...fitNodes.map((node) => node.py)) - pad;
+    const maxY = Math.max(...fitNodes.map((node) => node.py)) + pad;
     const contentWidth = Math.max(1, maxX - minX);
     const contentHeight = Math.max(1, maxY - minY);
     const fitWidth = Math.max(1, this.W - this.FIT_PADDING * 2);
@@ -772,24 +810,27 @@ export class Renderer {
       const label = this.formatNodeLabel(node.id);
       const freeBudgetAvailable = placedFreeLabels < freeLabelBudget;
       const canPlace = this.canPlaceLabelFast(occupiedLabels, label, node.px, node.py - 13);
+      const width = this.measureTextWidth(ctx, label) + 12;
+      const visualPriority = this.nodeVisualPriority(node);
       
       // Determine if this label should be forced to show
       // - Always show hovered, pinned nodes
       // - Show on focus only for the focused node itself, not all connected nodes
       const isFocusedNode = isHovered || (focusState.lockedNodeId === node.id);
       const forceLabel = isFocusedNode || node.isPinned;
-      
-      // For non-forced labels, also consider if node is isolated (few connections)
-      // This improves visibility of standalone nodes
-      const nodeConnectivity = this.model.getSimplicesForNode(node.id).length;
-      const isIsolated = nodeConnectivity <= 1;
-      const shouldForceIsolated = isIsolated && focusState.isActive;
-      
-      const shouldDrawLabel = forceLabel || shouldForceIsolated || (freeBudgetAvailable && canPlace);
+      const isClusterNode = visualPriority.bucket >= 3;
+      const isEdgeNode = visualPriority.bucket === 2;
+      const isDisconnected = visualPriority.bucket === 0;
+
+      // keep disconnected nodes from flooding labels in large graphs;
+      // clusters > edges > disconnected is the UX priority.
+      const shouldDrawLabel = forceLabel
+        || (isClusterNode && freeBudgetAvailable && canPlace)
+        || (isEdgeNode && placedFreeLabels < Math.max(2, Math.floor(freeLabelBudget * 0.45)) && canPlace)
+        || (!isDisconnected && focusState.isActive && freeBudgetAvailable && canPlace);
+
       if (!shouldDrawLabel) return;
-      if (!forceLabel && !shouldForceIsolated) placedFreeLabels++;
-      
-      const width = this.measureTextWidth(ctx, label) + 12;
+      if (!forceLabel) placedFreeLabels++;
       const height = 18;
       const left = node.px - width / 2;
       const top = node.py - 27;

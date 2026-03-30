@@ -362,16 +362,22 @@ export function inferSimplicesLegacy(contexts: InferenceContext[], settings: Pic
 }
 
 export function inferSimplices(contexts: InferenceContext[], settings: PluginSettings): Simplex[] {
+  console.time('inferSimplices-total');
   const mode = settings.inferenceMode ?? 'taxonomic';
   const results: Simplex[] = [];
 
   if (mode === 'taxonomic' || mode === 'hybrid') {
+    console.time('inferSimplices-legacy');
     results.push(...inferSimplicesLegacy(contexts, settings));
+    console.timeEnd('inferSimplices-legacy');
   }
 
   if (mode === 'emergent' || mode === 'hybrid') {
+    console.time('inferSimplices-emergent');
     results.push(...inferSimplicesEmergentWithMode(contexts, settings));
+    console.timeEnd('inferSimplices-emergent');
   }
 
+  console.timeEnd('inferSimplices-total');
   return results;
 }

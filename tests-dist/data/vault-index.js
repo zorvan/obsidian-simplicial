@@ -12,10 +12,15 @@ class VaultIndex {
         this.model = model;
         this.settings = settings;
         this.onExternalChange = onExternalChange;
+        this.fullScanChunkSize = 24;
+        this.inferenceRebuildDelayMs = 40;
         this.lastWrittenHash = new Map();
         this.fileSimplexKeys = new Map();
         this.inferenceContexts = new Map();
         this.lastInferredSnapshot = "";
+        this.inferenceRebuildTimer = null;
+        this.inferenceRebuildPromise = null;
+        this.resolveInferenceRebuild = null;
         this.debouncedChange = (0, obsidian_1.debounce)((file) => {
             void this.onFileChange(file);
         }, 100, true);
@@ -43,11 +48,20 @@ class VaultIndex {
         logger_1.logger.info("vault-index", "Starting full vault scan", {
             fileCount: files.length
         });
+        let chunk = [];
         for (const file of files) {
             const content = await this.app.vault.read(file);
-            this.processFile(file, content);
+            chunk.push({ file, content });
+            if (chunk.length >= this.fullScanChunkSize) {
+                this.flushFullScanChunk(chunk);
+                chunk = [];
+                await this.yieldToBrowser();
+            }
         }
-        this.rebuildInferredSimplices();
+        if (chunk.length > 0) {
+            this.flushFullScanChunk(chunk);
+        }
+        await this.scheduleInferenceRebuild(0);
         logger_1.logger.info("vault-index", "Completed full vault scan", {
             fileCount: files.length,
             indexedNodeCount: this.model.nodes.size,
@@ -71,7 +85,7 @@ class VaultIndex {
             hash: currentHash
         });
         this.processFile(file, content);
-        this.rebuildInferredSimplices();
+        await this.scheduleInferenceRebuild();
         this.onExternalChange?.();
     }
     onFileDelete(file) {
@@ -81,8 +95,7 @@ class VaultIndex {
         this.inferenceContexts.delete(file.path);
         this.model.removeNode(file.path);
         this.model.replaceSourceSimplices(file.path, []);
-        this.rebuildInferredSimplices();
-        this.onExternalChange?.();
+        void this.scheduleInferenceRebuild().then(() => this.onExternalChange?.());
     }
     onFileRename(file, oldPath) {
         logger_1.logger.info("vault-index", "File renamed", {
@@ -100,8 +113,7 @@ class VaultIndex {
             this.inferenceContexts.set(file.path, { ...context, path: file.path });
             this.inferenceContexts.delete(oldPath);
         }
-        this.rebuildInferredSimplices();
-        this.onExternalChange?.();
+        void this.scheduleInferenceRebuild().then(() => this.onExternalChange?.());
     }
     processFile(file, content) {
         this.model.setNode(file.path, { isVirtual: false });
@@ -116,6 +128,39 @@ class VaultIndex {
             totalNodeCount: this.model.nodes.size,
             totalSimplexCount: this.model.simplices.size
         });
+    }
+    flushFullScanChunk(chunk) {
+        this.model.batch(() => {
+            chunk.forEach(({ file, content }) => {
+                this.processFile(file, content);
+            });
+        });
+    }
+    async yieldToBrowser() {
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+    }
+    scheduleInferenceRebuild(delayMs = this.inferenceRebuildDelayMs) {
+        if (this.inferenceRebuildPromise === null) {
+            this.inferenceRebuildPromise = new Promise((resolve) => {
+                this.resolveInferenceRebuild = resolve;
+            });
+        }
+        if (this.inferenceRebuildTimer !== null) {
+            window.clearTimeout(this.inferenceRebuildTimer);
+        }
+        this.inferenceRebuildTimer = window.setTimeout(() => {
+            this.inferenceRebuildTimer = null;
+            try {
+                this.rebuildInferredSimplices();
+            }
+            finally {
+                const resolve = this.resolveInferenceRebuild;
+                this.resolveInferenceRebuild = null;
+                this.inferenceRebuildPromise = null;
+                resolve?.();
+            }
+        }, delayMs);
+        return this.inferenceRebuildPromise;
     }
     rebuildInferredSimplices() {
         const inferred = (0, inference_1.inferSimplices)([...this.inferenceContexts.values()], this.settings);
@@ -132,6 +177,10 @@ class VaultIndex {
         }
     }
     destroy() {
+        if (this.inferenceRebuildTimer !== null) {
+            window.clearTimeout(this.inferenceRebuildTimer);
+            this.inferenceRebuildTimer = null;
+        }
         // Obsidian handles event cleanup via plugin registration scope.
     }
 }

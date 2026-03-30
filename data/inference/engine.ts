@@ -10,9 +10,19 @@ export function runEmergentInference(
   contexts: InferenceContext[],
   config: InferenceConfig,
 ): Simplex[] {
+  console.time('runEmergentInference-buildGraph');
   const graph = buildRawGraph(contexts, config);
+  console.timeEnd('runEmergentInference-buildGraph');
+
+  console.time('runEmergentInference-detectTriads');
   const triads = detectOpenTriads(graph, config);
+  console.timeEnd('runEmergentInference-detectTriads');
+
+  console.time('runEmergentInference-detectClusters');
   const densityClusters = detectDensityClusters(graph, config);
+  console.timeEnd('runEmergentInference-detectClusters');
+
+  console.time('runEmergentInference-dedupe');
   const dedupedCandidates = new Map<string, CandidateSimplex>();
 
   [...triads, ...densityClusters].forEach((candidate) => {
@@ -23,7 +33,9 @@ export function runEmergentInference(
     }
   });
   const allCandidates = [...dedupedCandidates.values()];
+  console.timeEnd('runEmergentInference-dedupe');
 
+  console.time('runEmergentInference-score');
   const scored = allCandidates
     .map((c) => scoreCandidate(c, [...graph.nodes.values()], config))
     .filter((c) => c.insightScore >= config.insightThreshold && c.class !== 'folder-cluster')
@@ -45,6 +57,7 @@ export function runEmergentInference(
       dominantSignal: c.label === "density cluster" ? 'semantic' : 'soft-cluster',
       // class is in type; we preserve via label where needed
     }));
+  console.timeEnd('runEmergentInference-score');
 
   return scored;
 }
