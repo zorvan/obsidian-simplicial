@@ -5,7 +5,7 @@ A knowledge graph plugin that replaces pairwise links with **higher-order struct
 ---
 
 ![Status](https://img.shields.io/badge/status-in%20development-orange)
-![Obsidian](https://img.shields.io/badge/obsidian-%3E%3D1.4.0-blueviolet)
+![Obsidian](https://img.shields.io/badge/obsidian-%3E%3D1.5.0-blueviolet)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
@@ -60,7 +60,7 @@ Both views are projections of the same underlying simplicial model. Toggle betwe
 
 ## Features
 
-### Core (v1)
+### Core (v1–v2)
 - **Organic blob renderer** — clusters visualized as soft, overlapping fields. Blobs use a capsule-union metaball approach that correctly handles any node arrangement, including non-convex shapes.
 - **Living layout** — force simulation with simplex cohesion and gentle breathing. Layout never fully settles; it drifts quietly when idle, wakes on interaction or vault changes.
 - **Sleep mode** — the render loop pauses when kinetic energy falls below threshold. No idle CPU drain.
@@ -70,17 +70,21 @@ Both views are projections of the same underlying simplicial model. Toggle betwe
 - **Node pinning** — double-click any node to fix its position across sessions. Click-and-hold to temporarily push overlapping neighbors apart.
 - **Rename tracking** — renaming a note in Obsidian automatically updates all simplex references without losing layout positions.
 - **Real-time updates** — vault changes (create, modify, delete, rename) update the graph live.
+- **Formal/geometric view** — toggle between organic blobs and crisp geometric rendering with wireframe edges.
+- **Lasso-select creation** — click and drag to draw a lasso around nodes, then open the create-simplex dialog directly on the canvas.
+- **Promote simplex to note** — compress a cluster into a first-class vault concept. The new note links to all member nodes.
+- **Filtration controls** — reveal structure layer by layer by weight threshold. Choose from weight, confidence, or decayed-weight metrics.
+- **Simplex centrality analysis** — identify which notes anchor the most clusters. Displayed in the metadata panel and global analysis view.
 
-### Planned (v2)
-- Lasso-select nodes to form a simplex directly on the canvas
-- System-suggested closures — detect closed triads and offer to solidify them
-- Promote simplex to note — compress a cluster into a first-class vault concept
+### Analysis & Inference (v2+)
+- **Edge inference** — infer lightweight edges from tags, outbound links, title/content overlap, and folder co-location.
+- **Suggestion system** — detect triangle closures and soft clusters with configurable confidence threshold. Render suggestions directly on the canvas.
+- **Temporal decay** — older simplices gradually lose strength, allowing your graph to naturally shift focus toward recent work.
+- **Centrality measures** — simplex centrality per node, plus global hub identification.
 
 ### Planned (v3)
-- Formal/geometric view toggle — crisp triangles and wireframe tetrahedra
 - Betti numbers — count connected components, holes, and voids in your knowledge structure
-- Filtration slider — reveal structure layer by layer by weight threshold
-- Simplex centrality — identify the notes that anchor the most clusters
+- Persistent homology — reveal which conceptual clusters are robust across different weight thresholds
 
 ---
 
@@ -180,7 +184,7 @@ You can switch to a central `_simplicial.md` file in settings if you prefer to k
 ### From source
 
 ```bash
-git clone https://github.com/your-username/obsidian-simplicial
+git clone https://github.com/zorvan/obsidian-simplicial
 cd obsidian-simplicial
 npm install
 npm run build
@@ -194,6 +198,7 @@ Copy the output to your vault's plugin directory as above.
 
 Open Settings → Simplicial Complex to configure:
 
+### Display & Interaction
 | Setting | Default | Description |
 |---|---|---|
 | Persistence mode | `source-note` | Where simplex definitions are written — note frontmatter or a central file |
@@ -205,6 +210,46 @@ Open Settings → Simplicial Complex to configure:
 | Noise amount | 0.12 | Breathing intensity of the layout |
 | Sleep threshold | 0.01 | Kinetic energy level at which the layout pauses |
 | Dark mode | Auto | Follow system, or force light/dark |
+| Formal mode | Off | Switch from ambient blobs to geometric rendering with analysis overlays |
+| Label density | 0.5 | How many non-focused labels render before decluttering hides the rest |
+| Metadata hover delay | 300ms | Time before metadata panel updates on node hover |
+
+### Vault Linking
+| Setting | Default | Description |
+|---|---|---|
+| Link graph baseline | Off | Always show note-to-note vault links as 1-simplices |
+| Enable inferred edges | On | Use tags, links, titles, content, and folders to infer lightweight edges |
+| Inference threshold | 0.25 | Minimum combined signal before an inferred edge is created |
+
+### Edge Inference Weights (when enabled)
+| Setting | Default | Description |
+|---|---|---|
+| Link weight | 0.25 | Strength added by a resolved outbound link |
+| Mutual link bonus | 0.1 | Extra weight when both notes link each other |
+| Shared tag weight | 0.15 | Weight contributed by each shared tag |
+| Title overlap weight | 0.2 | Maximum title-token overlap contribution |
+| Content overlap weight | 0.15 | Maximum body-text overlap contribution |
+| Same folder weight | 0.1 | Boost when two notes share the same folder |
+| Top folder weight | 0.05 | Boost when two notes share the same top-level folder |
+
+### Suggestions & Analysis
+| Setting | Default | Description |
+|---|---|---|
+| Show suggestions | On | Render closure and soft-cluster suggestions directly on the canvas |
+| Suggestion threshold | 0.6 | Confidence level required before a suggestion is surfaced |
+| Command simplex size | 3 | How many nodes the create-from-open-note command tries to include |
+
+### Layout Optimization
+| Setting | Default | Description |
+|---|---|---|
+| Sparse edge length | 150 | Preferred spacing for sparse link-only graphs |
+| Sparse gravity boost | 1.5 | Extra centering force when the graph is mostly pairwise and sparse |
+
+### Filtration
+| Setting | Default | Description |
+|---|---|---|
+| Filtration metric | `weight` | Which simplex strength field the live filtration slider uses: weight, confidence, or decayed-weight |
+| Filtration threshold | 0 | Hide simplices below this threshold in the active metric |
 
 ---
 
