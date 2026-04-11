@@ -1,6 +1,7 @@
 # Simplicial Complex for Obsidian
 
 A knowledge graph plugin that replaces pairwise links with **higher-order structure** — clusters of notes that only make sense together, rendered as a living, organic field.
+My blog post about the motivation and process of creating this plugin : [blog post](https://zorvan.medium.com/i-built-a-tool-to-map-my-thoughts-it-failed-then-it-changed-how-i-think-01528fb40bf4)
 
 ---
 
