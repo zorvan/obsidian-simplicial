@@ -7,9 +7,16 @@ const open_triad_1 = require("./rules/open-triad");
 const density_cluster_1 = require("./rules/density-cluster");
 const scorer_1 = require("./scorer");
 function runEmergentInference(contexts, config) {
+    console.time('runEmergentInference-buildGraph');
     const graph = (0, graph_1.buildRawGraph)(contexts, config);
+    console.timeEnd('runEmergentInference-buildGraph');
+    console.time('runEmergentInference-detectTriads');
     const triads = (0, open_triad_1.detectOpenTriads)(graph, config);
+    console.timeEnd('runEmergentInference-detectTriads');
+    console.time('runEmergentInference-detectClusters');
     const densityClusters = (0, density_cluster_1.detectDensityClusters)(graph, config);
+    console.timeEnd('runEmergentInference-detectClusters');
+    console.time('runEmergentInference-dedupe');
     const dedupedCandidates = new Map();
     [...triads, ...densityClusters].forEach((candidate) => {
         const key = [...candidate.nodes].sort().join("|");
@@ -19,6 +26,8 @@ function runEmergentInference(contexts, config) {
         }
     });
     const allCandidates = [...dedupedCandidates.values()];
+    console.timeEnd('runEmergentInference-dedupe');
+    console.time('runEmergentInference-score');
     const scored = allCandidates
         .map((c) => (0, scorer_1.scoreCandidate)(c, [...graph.nodes.values()], config))
         .filter((c) => c.insightScore >= config.insightThreshold && c.class !== 'folder-cluster')
@@ -40,6 +49,7 @@ function runEmergentInference(contexts, config) {
         dominantSignal: c.label === "density cluster" ? 'semantic' : 'soft-cluster',
         // class is in type; we preserve via label where needed
     }));
+    console.timeEnd('runEmergentInference-score');
     return scored;
 }
 function inferSimplicesEmergentWithMode(contexts, config) {

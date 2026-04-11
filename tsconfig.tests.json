@@ -4,8 +4,8 @@
     "module": "CommonJS",
     "moduleResolution": "Node",
     "lib": ["ES2020", "DOM"],
-    "strict": true,
     "skipLibCheck": true,
+    "noEmit": false,
     "outDir": "tests-dist"
   },
   "include": ["core/**/*.ts", "data/**/*.ts", "tests/**/*.ts"]

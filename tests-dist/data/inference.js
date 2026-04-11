@@ -319,13 +319,19 @@ function inferSimplicesLegacy(contexts, settings) {
     return simplices;
 }
 function inferSimplices(contexts, settings) {
+    console.time('inferSimplices-total');
     const mode = settings.inferenceMode ?? 'taxonomic';
     const results = [];
     if (mode === 'taxonomic' || mode === 'hybrid') {
+        console.time('inferSimplices-legacy');
         results.push(...inferSimplicesLegacy(contexts, settings));
+        console.timeEnd('inferSimplices-legacy');
     }
     if (mode === 'emergent' || mode === 'hybrid') {
+        console.time('inferSimplices-emergent');
         results.push(...(0, engine_1.inferSimplicesEmergentWithMode)(contexts, settings));
+        console.timeEnd('inferSimplices-emergent');
     }
+    console.timeEnd('inferSimplices-total');
     return results;
 }

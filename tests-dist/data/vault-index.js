@@ -163,7 +163,9 @@ class VaultIndex {
         return this.inferenceRebuildPromise;
     }
     rebuildInferredSimplices() {
+        console.time('rebuildInferredSimplices-total');
         const inferred = (0, inference_1.inferSimplices)([...this.inferenceContexts.values()], this.settings);
+        console.timeEnd('rebuildInferredSimplices-total');
         this.model.replaceInferredSimplices(inferred);
         const snapshot = JSON.stringify({
             inferredSimplexCount: inferred.length,
