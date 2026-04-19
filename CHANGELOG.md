@@ -30,6 +30,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.0] - V2: From Detection to Discovery
+
+### Added
+- **Content-based clustering** (`data/clustering.ts`): TF-IDF vectorization with k-means clustering
+- **Semantic domain source**: New `domainSource` setting with options `folder`, `content-cluster`, `hybrid`
+- **Betti number computation** (`core/betti.ts`): Compute β₀, β₁, β₂ topological invariants
+- **Hole detection**: Enumerate unfilled triangles (β₁) and hollow tetrahedra (β₂)
+- **Betti display settings**: `enableBettiComputation`, `bettiDisplayOnCanvas`, `maxBettiDim`
+- **Interaction reinforcement settings**: `enableInteractionReinforcement`, `reinforcementStrength`
+- **Filtration slider setting**: `showFiltrationSlider`
+- **Explanation panel setting**: `enableExplanationPanel`
+
+### Changed
+- Domain diversity scoring now uses content-derived clusters instead of folder structure
+- `AnalysisSummary` extended with `betti` and `holeCount` fields
+- `InferenceConfig` extended with `domainSource` and `contentClusterCount`
+
+---
+
 ## [0.1.0] - Initial Development Version
 
 ### Core Features
