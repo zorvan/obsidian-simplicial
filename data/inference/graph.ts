@@ -42,8 +42,9 @@ export function computeEdgeStrength(
   strength += sharedRare.length * 0.15;
   strength -= sharedCommon.length * 0.10;
 
-  if (a.domain === b.domain) {
-    strength -= 0.15;
+  // Same domain bonus (notes in same conceptual area are more likely related)
+  if (a.domain && b.domain && a.domain === b.domain) {
+    strength += 0.15;
   }
 
   return Math.max(0, Math.min(1, strength));

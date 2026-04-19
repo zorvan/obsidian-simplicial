@@ -1,6 +1,7 @@
 import { normalizeKey } from "../core/normalize";
 import type { FocusState, LayoutNode, NodeID, Simplex, SimplexKey } from "../core/types";
 import { SimplicialModel } from "../core/model";
+import { createInteractionTracker, logInteraction, type ReinforcementState } from "../data/interactions";
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
@@ -21,6 +22,7 @@ export class InteractionController {
   private pressX = 0;
   private pressY = 0;
   private movedDuringPointerDown = false;
+  private interactionTracker: ReinforcementState;
 
   constructor(
     private model: SimplicialModel,
@@ -28,7 +30,43 @@ export class InteractionController {
     private onSelection?: (simplexKey: string | null) => void,
     private onHoverIntent?: (simplexKey: string | null) => void,
     private onPinnedStateChanged?: () => void,
-  ) {}
+    private onInteraction?: (tracker: ReinforcementState) => void,
+  ) {
+    this.interactionTracker = createInteractionTracker();
+  }
+
+  getInteractionTracker(): ReinforcementState {
+    return this.interactionTracker;
+  }
+
+  setInteractionTracker(state: ReinforcementState): void {
+    this.interactionTracker = state;
+  }
+
+  logConfirm(simplexKey: SimplexKey, nodeIds: NodeID[]): void {
+    logInteraction(this.interactionTracker, { type: 'confirm', simplexKey, nodeIds, weight: 0.5 });
+    this.onInteraction?.(this.interactionTracker);
+  }
+
+  logReject(simplexKey: SimplexKey, nodeIds: NodeID[]): void {
+    logInteraction(this.interactionTracker, { type: 'reject', simplexKey, nodeIds, weight: -0.3 });
+    this.onInteraction?.(this.interactionTracker);
+  }
+
+  logPromote(simplexKey: SimplexKey, nodeIds: NodeID[]): void {
+    logInteraction(this.interactionTracker, { type: 'promote', simplexKey, nodeIds, weight: 0.8 });
+    this.onInteraction?.(this.interactionTracker);
+  }
+
+  logDissolve(simplexKey: SimplexKey, nodeIds: NodeID[]): void {
+    logInteraction(this.interactionTracker, { type: 'dissolve', simplexKey, nodeIds, weight: -0.5 });
+    this.onInteraction?.(this.interactionTracker);
+  }
+
+  logCreate(nodeIds: NodeID[]): void {
+    logInteraction(this.interactionTracker, { type: 'create', nodeIds, weight: 0.6 });
+    this.onInteraction?.(this.interactionTracker);
+  }
 
   getFocusState(): FocusState {
     const activeNodeIds = new Set<NodeID>();
@@ -167,6 +205,17 @@ export class InteractionController {
     this.clearHoverIntent();
     this.hoveredSimplexKey = simplexKey;
     this.onSelection?.(simplexKey);
+    if (simplexKey) {
+      const simplex = this.model.getSimplex(simplexKey);
+      if (simplex) {
+        logInteraction(this.interactionTracker, {
+          type: 'select',
+          simplexKey,
+          nodeIds: simplex.nodes,
+          weight: 0.1
+        });
+      }
+    }
   }
 
   lerpAlpha(node: LayoutNode, focusState: FocusState): void {

@@ -84,6 +84,7 @@ export interface PluginSettings {
   enableExplanationPanel: boolean;
   enableInteractionReinforcement: boolean;
   reinforcementStrength: number;
+  interactionState?: unknown;
   persistenceMode: "source-note" | "central-file";
   centralFile: string;
   showEdges: boolean;

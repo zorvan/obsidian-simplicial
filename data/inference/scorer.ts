@@ -53,6 +53,8 @@ export function scoreCandidate(
       creative: 1.2,
       reference: 1.5,
     },
+    enableReinforcement: false,
+    reinforcementStrength: 0.5,
   });
 
   return {
