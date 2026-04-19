@@ -1,8 +1,8 @@
 {
   "name": "obsidian-simplicial",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
-  "description": "Obsidian plugin for simplicial complex visualization",
+  "description": "Obsidian plugin for simplicial complex visualization with topological analysis",
   "scripts": {
     "build": "node build.mjs production",
     "build:dev": "node build.mjs development",

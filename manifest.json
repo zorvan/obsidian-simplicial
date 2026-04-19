@@ -1,9 +1,10 @@
 {
-  "id": "obsidian-simplicial",
+  "id": "simplicial-complex",
   "name": "Simplicial Complex",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "minAppVersion": "1.5.0",
-  "description": "Organic simplicial complex view for Obsidian vaults.",
+  "description": "Knowledge discovery through simplicial complex view for Obsidian vaults. Higher-order relationships, topological analysis, and emergent structure detection.",
   "author": "Amin Razavi",
+  "authorUrl": "https://medium.com/@zorvan",
   "isDesktopOnly": false
 }

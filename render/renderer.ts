@@ -6,6 +6,8 @@ import { InteractionController } from "../interaction/controller";
 import { renderBlob } from "./blobs";
 import { renderEdges } from "./edges";
 import { effectiveColorForSimplex } from "./palette";
+import { drawBettiHUD } from "./components/hud";
+import { drawPhantomHoles, type VisibleBounds } from "./components/holes";
 
 interface RendererCallbacks {
   onContextMenu?: (target: { nodeId?: string; simplexKey?: string }, event: MouseEvent) => void;
@@ -153,7 +155,7 @@ export class Renderer {
       locked,
       nodes.length,
       this.settings.renderFilterMetric,
-      this.settings.renderFilterThreshold.toFixed(2),
+      this.settings.renderFilterThithreshold.toFixed(2),
     ].join("|");
   }
 
@@ -871,169 +873,16 @@ export class Renderer {
 
     // Draw Betti HUD if enabled
     if (this.settings.bettiDisplayOnCanvas && this.settings.enableBettiComputation) {
-      this.drawBettiHUD(ctx);
+      drawBettiHUD(ctx, this.model, this.isDark);
     }
 
     // Draw phantom holes (void-as-prompt)
     if (this.settings.enableBettiComputation) {
-      this.drawPhantomHoles(ctx);
+      drawPhantomHoles(ctx, this.model, this.isDark, this.getVisibleWorldBounds(), this.hoveredHoleKey);
     }
   }
 
-  private drawBettiHUD(ctx: CanvasRenderingContext2D): void {
-    const analysis = this.model.getAnalysisSummary();
-    if (!analysis.betti) return;
-
-    const { b0, b1, b2 } = analysis.betti;
-    const text = `β₀=${b0} β₁=${b1}${this.settings.maxBettiDim >= 2 ? ` β₂=${b2}` : ""}`;
-
-    ctx.save();
-    ctx.font = "600 13px system-ui, sans-serif";
-    const textWidth = ctx.measureText(text).width;
-    const padding = 10;
-    const x = 14;
-    const y = 14;
-    const width = textWidth + padding * 2;
-    const height = 26;
-
-    // Background
-    ctx.fillStyle = this.isDark
-      ? "rgba(20, 24, 32, 0.85)"
-      : "rgba(255, 255, 255, 0.85)";
-    ctx.beginPath();
-    ctx.roundRect(x, y, width, height, 8);
-    ctx.fill();
-
-    // Border
-    ctx.strokeStyle = this.isDark
-      ? "rgba(255, 255, 255, 0.15)"
-      : "rgba(0, 0, 0, 0.1)";
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    // Text
-    ctx.fillStyle = this.isDark
-      ? "rgba(235, 240, 248, 0.9)"
-      : "rgba(24, 28, 34, 0.85)";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
-    ctx.fillText(text, x + padding, y + height / 2);
-    ctx.restore();
-  }
-
-  private drawPhantomHoles(ctx: CanvasRenderingContext2D): void {
-    const analysis = this.model.getAnalysisSummary();
-    if (!analysis.betti?.holes?.length) return;
-
-    const allNodes = this.model.getAllNodes();
-    const nodeMap = new Map(allNodes.map(n => [n.id, n]));
-
-    ctx.save();
-    ctx.setLineDash([8, 4]);
-    ctx.lineWidth = 1.5;
-
-    // Get viewport bounds for visibility check
-    const visibleBounds = this.getVisibleWorldBounds();
-
-    for (const hole of analysis.betti.holes) {
-      const nodes = hole.boundaryNodes
-        .map(id => nodeMap.get(id))
-        .filter(Boolean) as Array<{ px: number; py: number }>;
-
-      if (nodes.length < 3) continue;
-
-      // Check if all nodes have valid positions (not at origin or uninitialized)
-      const validNodes = nodes.filter(n => Math.abs(n.px) > 1 && Math.abs(n.py) > 1);
-      if (validNodes.length < 3) {
-        // Skip holes where nodes aren't properly laid out yet
-        continue;
-      }
-
-      // Calculate centroid
-      const centroid = validNodes.reduce(
-        (sum, n) => ({ x: sum.x + n.px, y: sum.y + n.py }),
-        { x: 0, y: 0 }
-      );
-      centroid.x /= validNodes.length;
-      centroid.y /= validNodes.length;
-
-      // Skip if hole is far outside visible area (generous margin)
-      const margin = 300;
-      const holeMinX = Math.min(...validNodes.map(n => n.px));
-      const holeMaxX = Math.max(...validNodes.map(n => n.px));
-      const holeMinY = Math.min(...validNodes.map(n => n.py));
-      const holeMaxY = Math.max(...validNodes.map(n => n.py));
-
-      // Skip if entire hole is outside viewport (with margin)
-      if (holeMaxX < visibleBounds.minX - margin ||
-          holeMinX > visibleBounds.maxX + margin ||
-          holeMaxY < visibleBounds.minY - margin ||
-          holeMinY > visibleBounds.maxY + margin) {
-        continue;
-      }
-
-      // Also skip if hole is too close to origin (uninitialized cluster)
-      const distFromOrigin = Math.sqrt(centroid.x ** 2 + centroid.y ** 2);
-      if (distFromOrigin < 50) {
-        continue;
-      }
-
-      // Generate hole key from boundary nodes
-      const holeKey = hole.boundaryNodes.sort().join("|");
-      const isHovered = this.hoveredHoleKey === holeKey;
-
-      // Draw phantom simplex outline
-      ctx.strokeStyle = isHovered
-        ? "rgba(255, 165, 0, 0.9)"
-        : this.isDark
-          ? "rgba(255, 165, 0, 0.5)"
-          : "rgba(255, 140, 0, 0.6)";
-
-      ctx.beginPath();
-      ctx.moveTo(validNodes[0].px, validNodes[0].py);
-      for (let i = 1; i < validNodes.length; i++) {
-        ctx.lineTo(validNodes[i].px, validNodes[i].py);
-      }
-      ctx.closePath();
-      ctx.stroke();
-
-      // Fill with subtle color
-      ctx.fillStyle = isHovered
-        ? "rgba(255, 165, 0, 0.15)"
-        : "rgba(255, 165, 0, 0.05)";
-      ctx.fill();
-
-      // Draw missing indicator at centroid (only if hovered or hole is small)
-      const holeSize = Math.sqrt(
-        validNodes.reduce((sum, n) => sum + (n.px - centroid.x) ** 2 + (n.py - centroid.y) ** 2, 0)
-        / validNodes.length
-      );
-
-      if (isHovered || holeSize < 200) {
-        ctx.fillStyle = isHovered ? "rgba(255, 165, 0, 0.9)" : "rgba(255, 165, 0, 0.6)";
-        ctx.beginPath();
-        ctx.arc(centroid.x, centroid.y, isHovered ? 8 : 5, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Label with dimension info
-        ctx.font = "500 12px system-ui, sans-serif";
-        ctx.fillStyle = this.isDark ? "rgba(255, 255, 255, 0.8)" : "rgba(0, 0, 0, 0.7)";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        const label = hole.dimension === 1 ? "Missing Δ" : "Missing □";
-        ctx.fillText(label, centroid.x, centroid.y - 14);
-
-        // Show node count
-        ctx.font = "400 10px system-ui, sans-serif";
-        ctx.fillStyle = this.isDark ? "rgba(255, 255, 255, 0.5)" : "rgba(0, 0, 0, 0.5)";
-        ctx.fillText(`${validNodes.length} nodes`, centroid.x, centroid.y + 14);
-      }
-    }
-
-    ctx.restore();
-  }
-
-  private getVisibleWorldBounds(): { minX: number; maxX: number; minY: number; maxY: number } {
+  private getVisibleWorldBounds(): VisibleBounds {
     // Transform screen corners to world coordinates
     const tl = this.screenToWorld({ x: 0, y: 0 });
     const br = this.screenToWorld({ x: this.W, y: this.H });

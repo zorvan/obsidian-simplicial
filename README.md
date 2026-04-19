@@ -5,7 +5,7 @@ My blog post about the motivation and process of creating this plugin : [blog po
 
 ---
 
-![Status](https://img.shields.io/badge/status-in%20development-orange)
+![Version](https://img.shields.io/badge/version-0.3.0-green)
 ![Obsidian](https://img.shields.io/badge/obsidian-%3E%3D1.5.0-blueviolet)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
@@ -62,6 +62,7 @@ Both views are projections of the same underlying simplicial model. Toggle betwe
 ## Features
 
 ### Core (v1–v2)
+
 - **Organic blob renderer** — clusters visualized as soft, overlapping fields. Blobs use a capsule-union metaball approach that correctly handles any node arrangement, including non-convex shapes.
 - **Living layout** — force simulation with simplex cohesion and gentle breathing. Layout never fully settles; it drifts quietly when idle, wakes on interaction or vault changes.
 - **Sleep mode** — the render loop pauses when kinetic energy falls below threshold. No idle CPU drain.
@@ -78,14 +79,40 @@ Both views are projections of the same underlying simplicial model. Toggle betwe
 - **Simplex centrality analysis** — identify which notes anchor the most clusters. Displayed in the metadata panel and global analysis view.
 
 ### Analysis & Inference (v2+)
+
 - **Edge inference** — infer lightweight edges from tags, outbound links, title/content overlap, and folder co-location.
 - **Suggestion system** — detect triangle closures and soft clusters with configurable confidence threshold. Render suggestions directly on the canvas.
 - **Temporal decay** — older simplices gradually lose strength, allowing your graph to naturally shift focus toward recent work.
 - **Centrality measures** — simplex centrality per node, plus global hub identification.
 
-### Planned (v3)
-- Betti numbers — count connected components, holes, and voids in your knowledge structure
-- Persistent homology — reveal which conceptual clusters are robust across different weight thresholds
+### Topological Analysis (v3 — New!)
+
+- **Betti numbers (β₀, β₁, β₂)** — real-time computation of topological invariants showing:
+  - β₀: Connected components in your knowledge graph
+  - β₁: Unfilled triangles (holes) representing missing connections
+  - β₂: Hollow shells (voids) where 3D structure could form
+- **Phantom hole visualization** — missing simplices rendered as dashed orange outlines on the canvas. Click to create the missing connection.
+- **Hole-as-prompt interaction** — hover over a phantom hole to see which notes would complete the structure.
+- **Live Betti HUD** — display current Betti numbers in the top-left corner of the canvas.
+
+### Emergent Inference Engine (v3 — New!)
+
+- **Semantic clustering** — automatically group notes by content similarity using TF-IDF vectorization and k-means clustering
+- **Emergent edge detection** — discover relationships based on shared semantic domains, not just explicit links
+- **Hybrid inference modes** — choose between:
+  - **Emergent**: Graph-based semantic analysis with content clustering
+  - **Legacy**: Rule-based heuristics (tags, links, folders)
+  - **Hybrid**: Both systems working together
+- **Domain-aware coloring** — notes colored by their semantic cluster or folder structure
+- **Interaction reinforcement** — tracked interactions boost edge weights, making frequently-used connections stronger
+
+### UI/UX Improvements (v3 — New!)
+
+- **Floating canvas controls** — gear icon on the canvas opens real-time parameter adjustment panel
+- **Dual-slider precision controls** — Link Threshold and Filtration use coarse+fine dual sliders for precise tuning
+- **Adaptive value displays** — sliders show appropriate decimal precision (3 decimals for fine controls)
+- **Reorganized settings panel** — Emergent options prioritized, Legacy options organized separately
+- **Explanation cards** — human-readable explanations for inferred simplices in the metadata panel
 
 ---
 
@@ -105,7 +132,7 @@ Simplices are defined directly in your vault files. Two syntaxes are supported:
 - `△△` — a 3-simplex (4 nodes forming a core)
 - Node names are space-separated and matched to note titles (case-insensitive)
 
-**Can't type △?** Use `Ctrl/Cmd + Shift + S` in any markdown editor — it inserts `△ ` at the cursor.
+**Can't type △?** Use `Ctrl/Cmd + Shift + S` in any markdown editor — it inserts `△` at the cursor.
 
 ### YAML frontmatter (with metadata)
 
@@ -200,6 +227,7 @@ Copy the output to your vault's plugin directory as above.
 Open Settings → Simplicial Complex to configure:
 
 ### Display & Interaction
+
 | Setting | Default | Description |
 |---|---|---|
 | Persistence mode | `source-note` | Where simplex definitions are written — note frontmatter or a central file |
@@ -216,6 +244,7 @@ Open Settings → Simplicial Complex to configure:
 | Metadata hover delay | 300ms | Time before metadata panel updates on node hover |
 
 ### Vault Linking
+
 | Setting | Default | Description |
 |---|---|---|
 | Link graph baseline | Off | Always show note-to-note vault links as 1-simplices |
@@ -223,6 +252,7 @@ Open Settings → Simplicial Complex to configure:
 | Inference threshold | 0.25 | Minimum combined signal before an inferred edge is created |
 
 ### Edge Inference Weights (when enabled)
+
 | Setting | Default | Description |
 |---|---|---|
 | Link weight | 0.25 | Strength added by a resolved outbound link |
@@ -234,6 +264,7 @@ Open Settings → Simplicial Complex to configure:
 | Top folder weight | 0.05 | Boost when two notes share the same top-level folder |
 
 ### Suggestions & Analysis
+
 | Setting | Default | Description |
 |---|---|---|
 | Show suggestions | On | Render closure and soft-cluster suggestions directly on the canvas |
@@ -241,12 +272,14 @@ Open Settings → Simplicial Complex to configure:
 | Command simplex size | 3 | How many nodes the create-from-open-note command tries to include |
 
 ### Layout Optimization
+
 | Setting | Default | Description |
 |---|---|---|
 | Sparse edge length | 150 | Preferred spacing for sparse link-only graphs |
 | Sparse gravity boost | 1.5 | Extra centering force when the graph is mostly pairwise and sparse |
 
 ### Filtration
+
 | Setting | Default | Description |
 |---|---|---|
 | Filtration metric | `weight` | Which simplex strength field the live filtration slider uses: weight, confidence, or decayed-weight |
@@ -292,6 +325,7 @@ A full engineering specification is available at [`SPEC.md`](./SPEC.md).
 A **simplicial complex** K is a collection of simplices closed under the face operation: if σ ∈ K and τ ⊆ σ, then τ ∈ K.
 
 In this plugin:
+
 - A **0-simplex** is a note (node)
 - A **1-simplex** is a coherent pair of notes (edge)
 - A **2-simplex** is a coherent triple — the smallest unit of closure
@@ -308,6 +342,7 @@ This project is in active early development. Issues and pull requests are welcom
 Before contributing, please read [`SPEC.md`](./SPEC.md) — particularly §8 (Critical Implementation Checklist) — to understand the architectural constraints that must be preserved.
 
 Areas where contributions are most useful:
+
 - Parser edge cases (special characters in note titles, nested frontmatter, aliases)
 - Rendering performance (offscreen canvas caching, frame budget profiling)
 - Mathematical analysis layer (Betti numbers, filtration, centrality measures)
