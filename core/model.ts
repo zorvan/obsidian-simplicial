@@ -1,7 +1,8 @@
 import { generateFaces } from "./faces";
 import { hashLabel } from "./hash";
 import { normalizeKey, normalizeNodes, uniqueNodes } from "./normalize";
-import type { AnalysisSummary, LayoutNode, NodeID, Rect, Simplex, SimplexKey } from "./types";
+import type { AnalysisSummary, LayoutNode, NodeID, Rect, Simplex, SimplexKey, BettiResult } from "./types";
+import { computeBetti } from "./betti";
 
 function randomInRange(min: number, max: number): number {
   return min + Math.random() * (max - min);
@@ -310,6 +311,9 @@ export class SimplicialModel {
       }
     });
 
+    const betti = computeBetti(this, 2);
+    const holeCount = betti.holes.length;
+
     return {
       nodeCount: this.nodes.size,
       simplexCount: simplices.length,
@@ -325,6 +329,8 @@ export class SimplicialModel {
       maxSimplexCentralityNodeId,
       maxSimplexCentrality: Math.max(0, maxSimplexCentrality),
       averageSimplexCentrality: this.nodes.size ? Number((simplexCentralityTotal / this.nodes.size).toFixed(2)) : 0,
+      betti,
+      holeCount,
     };
   }
 }

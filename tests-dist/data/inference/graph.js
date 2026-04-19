@@ -5,6 +5,7 @@ exports.computeEdgeStrength = computeEdgeStrength;
 exports.buildRawGraph = buildRawGraph;
 exports.getEdgeStrength = getEdgeStrength;
 exports.getNeighborsAbove = getNeighborsAbove;
+const clustering_1 = require("../clustering");
 function normalizeKeyPair(a, b) {
     return [a, b].sort().join("|");
 }
@@ -48,11 +49,22 @@ function computeEdgeStrength(a, b, contexts, config) {
 function buildRawGraph(contexts, config) {
     const nodes = new Map();
     const ctxMap = new Map(contexts.map((c) => [c.path, c]));
+    let domainMap;
+    if (config.domainSource === 'content-cluster') {
+        domainMap = (0, clustering_1.clusterByContent)(contexts, { k: config.contentClusterCount });
+    }
+    else if (config.domainSource === 'hybrid') {
+        const contentClusters = (0, clustering_1.clusterByContent)(contexts, { k: config.contentClusterCount });
+        domainMap = (0, clustering_1.assignHybridDomains)(contexts, contentClusters);
+    }
+    else {
+        domainMap = new Map(contexts.map(c => [c.path, c.topFolder || c.folder || ""]));
+    }
     for (const ctx of contexts) {
         nodes.set(ctx.path, {
             id: ctx.path,
             role: ctx.role,
-            domain: ctx.topFolder || ctx.folder || "",
+            domain: domainMap.get(ctx.path) || ctx.topFolder || ctx.folder || "",
             tags: [...ctx.tags],
             modifiedAt: ctx.modifiedAt,
             linkCount: ctx.outgoingLinks.size,

@@ -61,6 +61,8 @@ export interface InferenceConfig {
   actionBonus: number;
   rareTagWeight: number;
   commonTagPenalty: number;
+  domainSource: 'folder' | 'content-cluster' | 'hybrid';
+  contentClusterCount: number;
 }
 
 export interface InferenceContext {

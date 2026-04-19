@@ -1,4 +1,5 @@
 import type { RawGraph, RawEdge, NoteProfile, InferenceContext, InferenceConfig } from "./types";
+import { clusterByContent, assignHybridDomains } from "../clustering";
 
 export function normalizeKeyPair(a: string, b: string): string {
   return [a, b].sort().join("|");
@@ -55,11 +56,21 @@ export function buildRawGraph(
   const nodes = new Map<string, NoteProfile>();
   const ctxMap = new Map<string, InferenceContext>(contexts.map((c) => [c.path, c]));
 
+  let domainMap: Map<string, string>;
+  if (config.domainSource === 'content-cluster') {
+    domainMap = clusterByContent(contexts, { k: config.contentClusterCount });
+  } else if (config.domainSource === 'hybrid') {
+    const contentClusters = clusterByContent(contexts, { k: config.contentClusterCount });
+    domainMap = assignHybridDomains(contexts, contentClusters);
+  } else {
+    domainMap = new Map(contexts.map(c => [c.path, c.topFolder || c.folder || ""]));
+  }
+
   for (const ctx of contexts) {
     nodes.set(ctx.path, {
       id: ctx.path,
       role: ctx.role,
-      domain: ctx.topFolder || ctx.folder || "",
+      domain: domainMap.get(ctx.path) || ctx.topFolder || ctx.folder || "",
       tags: [...ctx.tags],
       modifiedAt: ctx.modifiedAt,
       linkCount: ctx.outgoingLinks.size,

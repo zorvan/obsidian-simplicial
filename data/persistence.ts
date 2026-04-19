@@ -141,6 +141,15 @@ export async function readCentralFileState(app: App, centralFile: string): Promi
 
 export function getDefaultSettings(): PluginSettings {
   return {
+    domainSource: "hybrid",
+    contentClusterCount: 8,
+    enableBettiComputation: true,
+    bettiDisplayOnCanvas: true,
+    maxBettiDim: 2,
+    showFiltrationSlider: true,
+    enableExplanationPanel: true,
+    enableInteractionReinforcement: true,
+    reinforcementStrength: 0.05,
     persistenceMode: "source-note",
     centralFile: "_simplicial.md",
     showEdges: true,

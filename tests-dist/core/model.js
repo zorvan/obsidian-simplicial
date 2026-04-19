@@ -4,6 +4,7 @@ exports.SimplicialModel = void 0;
 const faces_1 = require("./faces");
 const hash_1 = require("./hash");
 const normalize_1 = require("./normalize");
+const betti_1 = require("./betti");
 function randomInRange(min, max) {
     return min + Math.random() * (max - min);
 }
@@ -309,6 +310,8 @@ class SimplicialModel {
                 maxSimplexCentralityNodeId = nodeId;
             }
         });
+        const betti = (0, betti_1.computeBetti)(this, 2);
+        const holeCount = betti.holes.length;
         return {
             nodeCount: this.nodes.size,
             simplexCount: simplices.length,
@@ -324,6 +327,8 @@ class SimplicialModel {
             maxSimplexCentralityNodeId,
             maxSimplexCentrality: Math.max(0, maxSimplexCentrality),
             averageSimplexCentrality: this.nodes.size ? Number((simplexCentralityTotal / this.nodes.size).toFixed(2)) : 0,
+            betti,
+            holeCount,
         };
     }
 }

@@ -10,6 +10,20 @@ export const HOLD_REPULSION = 900;
 export const COLOR_PALETTE = ["purple", "teal", "coral", "pink", "blue", "amber"] as const;
 export type ColorKey = (typeof COLOR_PALETTE)[number] | "neutral";
 export type RenderFilterMetric = "weight" | "confidence" | "decayed-weight";
+export type DomainSource = "folder" | "content-cluster" | "hybrid";
+
+export interface BettiResult {
+  b0: number;
+  b1: number;
+  b2: number;
+  holes: Hole[];
+}
+
+export interface Hole {
+  dimension: 1 | 2;
+  boundaryNodes: NodeID[];
+  missingSimplex: NodeID[];
+}
 
 export type SimplexSource =
   | 'user-defined'
@@ -61,6 +75,15 @@ export interface PinnedState {
 }
 
 export interface PluginSettings {
+  domainSource: DomainSource;
+  contentClusterCount: number;
+  enableBettiComputation: boolean;
+  bettiDisplayOnCanvas: boolean;
+  maxBettiDim: 1 | 2;
+  showFiltrationSlider: boolean;
+  enableExplanationPanel: boolean;
+  enableInteractionReinforcement: boolean;
+  reinforcementStrength: number;
   persistenceMode: "source-note" | "central-file";
   centralFile: string;
   showEdges: boolean;
@@ -170,4 +193,6 @@ export interface AnalysisSummary {
   maxSimplexCentralityNodeId: NodeID | null;
   maxSimplexCentrality: number;
   averageSimplexCentrality: number;
+  betti?: BettiResult;
+  holeCount: number;
 }

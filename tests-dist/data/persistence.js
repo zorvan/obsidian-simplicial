@@ -126,6 +126,15 @@ async function readCentralFileState(app, centralFile) {
 }
 function getDefaultSettings() {
     return {
+        domainSource: "hybrid",
+        contentClusterCount: 8,
+        enableBettiComputation: true,
+        bettiDisplayOnCanvas: true,
+        maxBettiDim: 2,
+        showFiltrationSlider: true,
+        enableExplanationPanel: true,
+        enableInteractionReinforcement: true,
+        reinforcementStrength: 0.05,
         persistenceMode: "source-note",
         centralFile: "_simplicial.md",
         showEdges: true,
