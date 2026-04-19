@@ -441,7 +441,7 @@ All defaults defined in `getDefaultSettings()` in `data/persistence.ts`. Key def
 ## Appendix B: File Structure
 
 ```
-obsidian-simplicial/
+simplicial-complex/
 ├── core/                 # Pure data model (no Obsidian deps)
 │   ├── faces.ts          # Face generation & lazy computation
 │   ├── hash.ts           # Deterministic label hashing

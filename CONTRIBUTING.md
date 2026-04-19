@@ -7,8 +7,8 @@ Thank you for your interest in contributing! This plugin is in active early deve
 ## Quick Start
 
 ```bash
-git clone https://github.com/zorvan/obsidian-simplicial
-cd obsidian-simplicial
+git clone https://github.com/zorvan/simplicial-complex
+cd simplicial-complex
 npm install
 npm run build
 ```

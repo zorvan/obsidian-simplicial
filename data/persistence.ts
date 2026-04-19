@@ -66,7 +66,7 @@ export async function ensureCentralFile(app: App, centralFile: string): Promise<
   if (existing instanceof TFile) return existing;
   const initial = [
     "---",
-    "managedBy: obsidian-simplicial",
+    "managedBy: simplicial-complex",
     "simplices: []",
     "---",
     "",
@@ -87,7 +87,7 @@ export async function writeSimplexToCentralFile(
   const content = await app.vault.read(file);
   const { frontmatter, body } = parseManagedFrontmatter(content);
   const key = normalizeKey(simplex.nodes);
-  frontmatter.managedBy = "obsidian-simplicial";
+  frontmatter.managedBy = "simplicial-complex";
   updateSimplexArray(frontmatter, key, simplexToSerializable(simplex));
   const simplexCount = Array.isArray(frontmatter.simplices) ? frontmatter.simplices.length : 0;
   const nextContent = serializeFrontmatter(frontmatter, body || "<!-- managed by Simplicial Complex plugin -->\n");

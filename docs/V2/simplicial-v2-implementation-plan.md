@@ -1,6 +1,6 @@
 # Simplicial Complex Plugin — v2 Implementation Plan
 
-**Project:** obsidian-simplicial  
+**Project:** simplicial-complex  
 **Based on:** Code review + blog post analysis (April 2026)  
 **Status:** Planning  
 **Author:** Review by Claude / Owner: Amin Razavi

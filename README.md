@@ -212,8 +212,8 @@ You can switch to a central `_simplicial.md` file in settings if you prefer to k
 ### From source
 
 ```bash
-git clone https://github.com/zorvan/obsidian-simplicial
-cd obsidian-simplicial
+git clone https://github.com/zorvan/simplicial-complex
+cd simplicial-complex
 npm install
 npm run build
 ```

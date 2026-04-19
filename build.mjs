@@ -39,7 +39,7 @@ const context = await esbuild.context({
 
 if (watch) {
   await context.watch();
-  console.log("[obsidian-simplicial] watching for changes...");
+  console.log("[simplicial-complex] watching for changes...");
 } else {
   await context.rebuild();
   await context.dispose();

@@ -333,7 +333,7 @@ Vault (Markdown files)
 ### 3.2 File Structure
 
 ```
-obsidian-simplicial/
+simplicial-complex/
 ├── main.ts                   # Plugin entry — wires everything together
 │
 ├── core/

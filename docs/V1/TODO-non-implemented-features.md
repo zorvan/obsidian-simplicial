@@ -17,25 +17,25 @@ These items were previously listed as non-implemented, but are now present in th
 ### Performance and Scale
 
 **Barnes-Hut quad-tree repulsion**
-- Implemented in [layout/engine.ts](/home/zorvan/Work/projects/qwen3/obsidian-simplicial/layout/engine.ts)
+- Implemented in [layout/engine.ts](/home/zorvan/Work/projects/qwen3/simplicial-complex/layout/engine.ts)
 - Includes quadtree construction, center-of-mass aggregation, and Barnes-Hut force approximation
 
 **Inference engine optimization**
-- Implemented in [data/inference.ts](/home/zorvan/Work/projects/qwen3/obsidian-simplicial/data/inference.ts)
+- Implemented in [data/inference.ts](/home/zorvan/Work/projects/qwen3/simplicial-complex/data/inference.ts)
 - Uses inverted indexing and candidate pruning instead of naive all-pairs comparison
 
 **Canvas rendering performance improvements**
-- Implemented in [render/renderer.ts](/home/zorvan/Work/projects/qwen3/obsidian-simplicial/render/renderer.ts)
+- Implemented in [render/renderer.ts](/home/zorvan/Work/projects/qwen3/simplicial-complex/render/renderer.ts)
 - Includes text width caching, viewport culling, reduced label work, and visible-node rendering only
 
 ### Emergent Inference and Suggestions
 
 **Soft clusters**
-- Implemented in [data/inference.ts](/home/zorvan/Work/projects/qwen3/obsidian-simplicial/data/inference.ts) and [data/inference/engine.ts](/home/zorvan/Work/projects/qwen3/obsidian-simplicial/data/inference/engine.ts)
+- Implemented in [data/inference.ts](/home/zorvan/Work/projects/qwen3/simplicial-complex/data/inference.ts) and [data/inference/engine.ts](/home/zorvan/Work/projects/qwen3/simplicial-complex/data/inference/engine.ts)
 - Soft-cluster suggestions are emitted as inferred simplices with confidence and suggestion overlays
 
 **Delayed naming and promotion, basic form**
-- Partially realized through inferred/suggested simplices and promotion actions in [ui/panel.ts](/home/zorvan/Work/projects/qwen3/obsidian-simplicial/ui/panel.ts)
+- Partially realized through inferred/suggested simplices and promotion actions in [ui/panel.ts](/home/zorvan/Work/projects/qwen3/simplicial-complex/ui/panel.ts)
 - Users can inspect, label, weight, promote, or dissolve suggestions without immediate formalization
 
 ## Partially Implemented Follow-Up Work
@@ -45,7 +45,7 @@ These areas have meaningful groundwork in the code, but the original ambition is
 ### P1 - Performance Follow-Up
 
 **Progressive loading and virtual scrolling**
-- Current state: viewport culling is implemented in [render/renderer.ts](/home/zorvan/Work/projects/qwen3/obsidian-simplicial/render/renderer.ts)
+- Current state: viewport culling is implemented in [render/renderer.ts](/home/zorvan/Work/projects/qwen3/simplicial-complex/render/renderer.ts)
 - Missing: true progressive data loading, spatial indexing, chunked hydration, and large-vault streaming behavior
 - Priority: Medium
 
@@ -74,7 +74,7 @@ These still appear absent or substantially incomplete in the current codebase.
 
 **Betti number display**
 - Reason: Topological analysis promised in the spec is not surfaced in the UI
-- Current gap: [core/model.ts](/home/zorvan/Work/projects/qwen3/obsidian-simplicial/core/model.ts) reports connected components, but not Betti numbers for holes or voids
+- Current gap: [core/model.ts](/home/zorvan/Work/projects/qwen3/simplicial-complex/core/model.ts) reports connected components, but not Betti numbers for holes or voids
 - Priority: Medium
 
 **Simplex centrality measures**

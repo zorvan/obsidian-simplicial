@@ -61,7 +61,7 @@ type SimplexSource =
 ## New File: `inference/engine.ts`
 
 ```
-obsidian-simplicial/
+simplicial-complex/
 ├── inference/
 │   ├── engine.ts        # SimplexInferenceEngine — orchestrates all rules
 │   ├── roles.ts         # NoteRole extraction from tags, content, properties
